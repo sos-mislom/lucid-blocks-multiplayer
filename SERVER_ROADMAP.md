@@ -706,4 +706,5 @@ Good release target:
   - Linux cleanup script now removes Proton/Wine child processes by dedicated cgroup and Proton prefix, preventing leftover `winedevice/rpcss/tabtip` after service restart.
   - Server registry MVP added: local `user://lucid_blocks_server_registry.json` plus optional remote `server_registry_url`; server cards hide raw endpoints.
   - Latest local debug-gated PCK hash: `3A3179BA4FCBC081720480E678AAB47B55544385AEA36D9373A066B53D4991E4`.
+  - VPS deploy of the debug-gated PCK was attempted but not kept: local status readiness timed out after restart, so the VPS PCK was rolled back to `D4F56302CE8ED678F6C66057EF14D1DC2DC933AA63508E8A04D68A2F300238A4` while the launch/readiness issue is investigated.
   - Latest native DLL hash, currently kept disabled on Linux VPS: `90603A319475355D73A8661A5DFC948F3AAFFBBD453209CC7CD3C6E5DBA24164`.
