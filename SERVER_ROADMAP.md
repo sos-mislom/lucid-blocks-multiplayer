@@ -681,4 +681,5 @@ Good release target:
   - Friend install guide added at `docs/FRIEND_INSTALL_RU.md`; player-facing docs keep private endpoint details hidden.
   - Multiplayer export script now writes to a temporary PCK first and replaces the release artifact only after a successful export.
   - Remote player proxy no longer inherits the full local `Player` script; export is clean without `RemotePlayerProxy/Player` parse errors.
+  - Linux cleanup script now removes Proton/Wine child processes by dedicated cgroup and Proton prefix, preventing leftover `winedevice/rpcss/tabtip` after service restart.
   - Latest native DLL hash, currently kept disabled on Linux VPS: `90603A319475355D73A8661A5DFC948F3AAFFBBD453209CC7CD3C6E5DBA24164`.
