@@ -49,6 +49,24 @@ interest management, приоритетной сетью и soak-тестами.
 
 Цель: отделить играбельный кооп от debug/fork-фич, чтобы MVP можно было дать друзьям без риска сломать singleplayer или случайно включить читы.
 
+## Git / Release Discipline
+
+Goal: every playable/deployed state must be reproducible from Git.
+
+- Keep work split into small commits by concern: docs, build tooling, gameplay fix, deploy script, release metadata.
+- Do not commit unrelated dirty worktree changes when continuing a roadmap item.
+- Never push secrets, deployment passwords, private IPs, Steam credentials, private relay tokens, or private endpoint maps.
+- Every GitHub prerelease must point at the commit that produced its PCK/zip assets.
+- Every deployed VPS PCK must have its SHA256 recorded in this roadmap decision log.
+- After deploying to VPS, verify service state, relay state, opened UDP sockets, and deployed PCK hash.
+- If a release is rebuilt, create a new tag instead of silently replacing old release assets.
+- Keep upstream attribution in `README.md` and `CREDITS.md`; do not present upstream work or third-party assets as ours.
+- Before each public/friend release, run the release hygiene checks:
+  - no private endpoints in README/docs/PCK strings;
+  - no debug/fan avatar assets in public PCK;
+  - build exits cleanly without `SCRIPT ERROR`;
+  - server starts from systemd after restart.
+
 Обязательные правила для релизного coop-пака:
 
 - Core coop pack содержит только multiplayer/dedicated, server browser, chat, player list и минимальный avatar marker.
