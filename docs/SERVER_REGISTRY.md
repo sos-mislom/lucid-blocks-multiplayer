@@ -1,6 +1,8 @@
 # Server Registry
 
-The multiplayer client can load server cards from a private registry instead of hardcoding endpoints in the public PCK.
+The multiplayer client can load server cards from a private registry instead of
+hardcoding live endpoints in the public PCK. Player-facing UI should show
+friendly names only.
 
 ## Local Registry
 
@@ -10,7 +12,7 @@ Create this file in the game user data folder:
 lucid_blocks_server_registry.json
 ```
 
-Example:
+Template:
 
 ```json
 {
@@ -19,15 +21,20 @@ Example:
       "name": "QUALIA",
       "world_title": "QUALIA",
       "region": "private",
-      "address": "example.invalid",
-      "port": 24667,
-      "status_port": 24668
+      "address": "<server-hostname>",
+      "port": "<game-port>",
+      "status_port": "<status-port>"
     }
   ]
 }
 ```
 
-The UI uses `name`, `world_title`, `region`, status, player count and TPS. It does not display `address`, `port`, or `status_port` on server cards.
+Use real values only in your private local config or private hosted registry.
+Do not paste live server addresses or ports into public docs, screenshots,
+README files, release notes, or GitHub issues.
+
+The UI uses `name`, `world_title`, `region`, status, player count, and TPS. It
+does not display `address`, `port`, or `status_port` on server cards.
 
 ## Remote Registry
 
@@ -39,20 +46,17 @@ Set `server_registry_url` in `lucid_blocks_coop_config.json`:
 }
 ```
 
-The remote JSON uses the same format as the local registry.
-
-## Notes
-
-- Do not commit a real private registry with live endpoints.
-- Do not put private registry URLs, relay tokens, passwords, or server IPs in public docs.
-- If a server is moved, update the registry; players do not need a rebuilt PCK.
+The remote JSON uses the same shape as the local registry. Keep the remote file
+private unless you intentionally want to publish those endpoints.
 
 ## RU
 
-Клиент может загружать список серверов из приватного registry/manifest, чтобы не вшивать endpoint в публичный `.pck`.
+Клиент может загружать список серверов из приватного registry/manifest, чтобы
+не вшивать endpoint в публичный `.pck`.
 
 - Локальный файл: `lucid_blocks_server_registry.json` в user data папке игры.
 - Удаленный файл: `server_registry_url` в `lucid_blocks_coop_config.json`.
 - В UI показываются только имя, мир, регион, статус, игроки и TPS.
-- `address`, `port`, `status_port` используются только внутри клиента для подключения и status-запроса.
-- Реальные приватные endpoint-ы не коммитим в GitHub.
+- `address`, `port`, `status_port` используются только внутри клиента для
+  подключения и status-запроса.
+- Реальные приватные endpoint-ы не коммитим в GitHub и не кладем во friend zip.

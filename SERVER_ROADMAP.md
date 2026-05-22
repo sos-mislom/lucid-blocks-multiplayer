@@ -716,4 +716,7 @@ Good release target:
   - VPS deploy of the debug-gated PCK was attempted but not kept: local status readiness timed out after restart, so the VPS PCK was rolled back to `D4F56302CE8ED678F6C66057EF14D1DC2DC933AA63508E8A04D68A2F300238A4` while the launch/readiness issue is investigated.
   - VPS readiness issue found: the game also uses nested `lucid-blocks/mods`; old large coop PCKs there could shadow/conflict with the current release. Current deployed PCK hash in both mod locations is `FB56C7C02AE169DBC8FD72F19A3D4182776FCA3E2DB19EF85C6DDF96C8FFDE90`; local status now responds `ok=true`, `boot_phase=ready`, `tps=60`.
   - Added and tested `scripts/deploy_linux_dedicated_pck.ps1`: it uploads the multiplayer PCK, synchronizes both server mod directories, backs up old nested `.pck` files, restarts the dedicated service, and waits for sanitized `STATUS_READY`.
+  - Added and tested `scripts/package_friend_release.ps1`: it builds `dist/lucid-blocks-multiplayer-mvp.zip` from the current multiplayer PCK, friend install guide, Linux server docs, registry docs, and README screenshots.
+  - Latest friend-ready zip hash: `5CD649DA883E7C37A4D1AF7468094E5639EC30EC60F767F003131119456146B7`.
+  - Friend zip endpoint scan passed: no private host address, public test port literals, or internal public-entry names are present in the packaged docs/PCK.
   - Latest native DLL hash, currently kept disabled on Linux VPS: `90603A319475355D73A8661A5DFC948F3AAFFBBD453209CC7CD3C6E5DBA24164`.
