@@ -66,6 +66,7 @@ Goal: every playable/deployed state must be reproducible from Git.
   - no debug/fan avatar assets in public PCK;
   - build exits cleanly without `SCRIPT ERROR`;
   - server starts from systemd after restart.
+- Use `scripts/deploy_linux_dedicated_pck.ps1` for VPS PCK deploys so both Lucid Blocks mod directories are synchronized and readiness is checked before testing.
 
 Обязательные правила для релизного coop-пака:
 
@@ -714,4 +715,5 @@ Good release target:
   - Latest local threaded-status diagnostic PCK hash: `FB56C7C02AE169DBC8FD72F19A3D4182776FCA3E2DB19EF85C6DDF96C8FFDE90`.
   - VPS deploy of the debug-gated PCK was attempted but not kept: local status readiness timed out after restart, so the VPS PCK was rolled back to `D4F56302CE8ED678F6C66057EF14D1DC2DC933AA63508E8A04D68A2F300238A4` while the launch/readiness issue is investigated.
   - VPS readiness issue found: the game also uses nested `lucid-blocks/mods`; old large coop PCKs there could shadow/conflict with the current release. Current deployed PCK hash in both mod locations is `FB56C7C02AE169DBC8FD72F19A3D4182776FCA3E2DB19EF85C6DDF96C8FFDE90`; local status now responds `ok=true`, `boot_phase=ready`, `tps=60`.
+  - Added and tested `scripts/deploy_linux_dedicated_pck.ps1`: it uploads the multiplayer PCK, synchronizes both server mod directories, backs up old nested `.pck` files, restarts the dedicated service, and waits for sanitized `STATUS_READY`.
   - Latest native DLL hash, currently kept disabled on Linux VPS: `90603A319475355D73A8661A5DFC948F3AAFFBBD453209CC7CD3C6E5DBA24164`.
