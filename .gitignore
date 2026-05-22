@@ -2,6 +2,7 @@ work/logs/
 work/recovered/
 work/tools/
 work/export/
+work/release/
 native_patch/runtime_extension/build/
 native_patch/runtime_extension/godot-cpp/
 native_patch/runtime_extension/extension_api.double.json
