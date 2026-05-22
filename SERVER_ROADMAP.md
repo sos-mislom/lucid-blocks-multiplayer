@@ -677,7 +677,7 @@ Good release target:
     - the experimental native no-render GDExtension is disabled on the Linux VPS for now: with it loaded under Proton, world boot crashes at `Loading world chunks...` with `Cannot find instance binding callbacks for class 'World'`.
   - Server browser now includes a second default public entry by friendly name only. Technical endpoints belong in private admin config/docs, not player-facing docs.
   - Latest local/deployed PCK hash: `D48CA34AF845792F275D31DCD77AE31CC3019CA1EBCC78B045D1936C332984DE`.
-  - GitHub prerelease `v0.1.1-mvp` is published with the sanitized multiplayer PCK and a friend-ready zip.
+  - GitHub prerelease `v0.1.2-mvp` is published with the sanitized multiplayer PCK, friend-ready zip, and Linux cleanup script in source.
   - Friend install guide added at `docs/FRIEND_INSTALL_RU.md`; player-facing docs keep private endpoint details hidden.
   - Multiplayer export script now writes to a temporary PCK first and replaces the release artifact only after a successful export.
   - Remote player proxy no longer inherits the full local `Player` script; export is clean without `RemotePlayerProxy/Player` parse errors.
