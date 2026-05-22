@@ -132,6 +132,8 @@ var config: Dictionary = {
 }
 var dedicated_server_enabled: bool = false
 var dedicated_server_started: bool = false
+var dedicated_server_ready: bool = false
+var dedicated_boot_phase: String = "disabled"
 var dedicated_server_autocreate: bool = true
 var dedicated_server_world_identifier: String = ""
 var dedicated_server_world_title: String = DEFAULT_DEDICATED_WORLD_TITLE
@@ -409,7 +411,9 @@ func _ready() -> void:
     print("[lucid-blocks-coop] manager ready")
     _update_status_text()
     if dedicated_server_enabled:
+        dedicated_boot_phase = "starting"
         print("[lucid-blocks-coop] dedicated server mode requested on port %s" % dedicated_server_port)
+        _start_dedicated_status_udp()
         call_deferred("_dedicated_server_bootstrap")
     elif auto_connect_enabled:
         print("[lucid-blocks-coop] auto-connect requested for %s:%s" % [auto_connect_address, auto_connect_port])
@@ -611,8 +615,10 @@ func _dedicated_server_bootstrap() -> void:
         str(is_instance_valid(Ref.world) and bool(Ref.world.started_up)),
     ])
     if not Ref.main.loaded:
+        dedicated_boot_phase = "waiting_main"
         await _await_dedicated_main_loaded()
     if is_instance_valid(Ref.world) and not Ref.world.started_up:
+        dedicated_boot_phase = "waiting_world"
         await _await_dedicated_world_started()
     await get_tree().process_frame
 
@@ -631,6 +637,7 @@ func _dedicated_server_bootstrap() -> void:
 
     _mark_dedicated_world_register(save_register)
 
+    dedicated_boot_phase = "loading_world"
     print("[lucid-blocks-coop] dedicated loading world '%s' (%s)" % [
         str(save_register.get_data("title", dedicated_server_world_title)),
         str(save_register.get_data("uuid", ""))
@@ -656,13 +663,17 @@ func _dedicated_server_bootstrap() -> void:
     _apply_dedicated_player_safety()
     config["port"] = dedicated_server_port
     _save_config()
-	print("[lucid-blocks-coop] Dedicated bootstrap host_session start")
-	var dedicated_host_ok: bool = _start_lan_host(dedicated_server_port, true)
-	if dedicated_host_ok and _has_live_peer() and multiplayer.is_server():
-		await _replay_server_chunk_journal()
-		status_message = "Dedicated server hosting on port %s" % dedicated_server_port
-		print("[lucid-blocks-coop] %s" % status_message)
-		_start_dedicated_status_udp()
+    dedicated_boot_phase = "starting_host"
+    print("[lucid-blocks-coop] Dedicated bootstrap host_session start")
+    var dedicated_host_ok: bool = _start_lan_host(dedicated_server_port, true)
+    if dedicated_host_ok and _has_live_peer() and multiplayer.is_server():
+        dedicated_boot_phase = "replaying_journal"
+        await _replay_server_chunk_journal()
+        status_message = "Dedicated server hosting on port %s" % dedicated_server_port
+        print("[lucid-blocks-coop] %s" % status_message)
+        _start_dedicated_status_udp()
+        dedicated_server_ready = true
+        dedicated_boot_phase = "ready"
         _update_status_text()
         _refresh_world_runtime_mode()
         print("[lucid-blocks-coop] Dedicated ready world='%s' status_port=%s load_radius=%s buffer_radius=%s" % [
@@ -671,8 +682,8 @@ func _dedicated_server_bootstrap() -> void:
             dedicated_load_radius,
             dedicated_buffer_radius,
         ])
-	else:
-		_dedicated_server_fail("Dedicated server failed to create ENet host")
+    else:
+        _dedicated_server_fail("Dedicated server failed to create ENet host")
 
 
 func _await_dedicated_main_loaded() -> void:
@@ -719,6 +730,8 @@ func _auto_connect_bootstrap() -> void:
 
 func _dedicated_server_fail(message: String, exit_code: int = 2) -> void:
     status_message = message
+    dedicated_server_ready = false
+    dedicated_boot_phase = "failed"
     push_error("[lucid-blocks-coop] %s" % message)
     _update_status_text()
     get_tree().quit(exit_code)
@@ -959,9 +972,14 @@ func _tick_dedicated_status_udp() -> void:
 
 func _get_dedicated_status_payload() -> Dictionary:
     var runtime_metrics: Dictionary = _get_server_runtime_metrics()
+    var ready: bool = dedicated_server_ready and multiplayer.multiplayer_peer != null and multiplayer.is_server()
+    var phase: String = dedicated_boot_phase if dedicated_boot_phase != "" else ("ready" if ready else "starting")
     var payload: Dictionary = {
         "protocol": "lucid-blocks-coop-udp",
-        "ok": true,
+        "ok": ready,
+        "status": phase,
+        "ready": ready,
+        "boot_phase": phase,
         "game_port": dedicated_server_port,
         "status_port": dedicated_status_port,
         "transport": SESSION_TRANSPORT_LAN,
@@ -3003,9 +3021,13 @@ func _apply_server_browser_status(index: int, data: Dictionary) -> void:
     if index < 0 or index >= server_browser_entries.size():
         return
     var entry: Dictionary = server_browser_entries[index]
+    var remote_status: String = str(data.get("status", "")).strip_edges().to_lower()
     if bool(data.get("ok", false)):
         entry["status"] = "online"
         entry["message"] = str(data.get("message", "Server online"))
+    elif remote_status == "starting" or remote_status == "waiting_main" or remote_status == "waiting_world" or remote_status == "loading_world" or remote_status == "starting_host" or remote_status == "replaying_journal":
+        entry["status"] = "checking"
+        entry["message"] = str(data.get("message", "Server is starting"))
     elif data.has("backend_connected") and not bool(data.get("backend_connected", false)):
         entry["status"] = "relay"
         entry["message"] = str(data.get("message", "Relay online, host is not connected"))
