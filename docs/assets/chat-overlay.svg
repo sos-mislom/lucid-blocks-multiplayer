@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Illustrated chat overlay screenshot</title>
+  <desc id="desc">A mock screenshot of the in-game chat overlay opened with N or Enter.</desc>
+  <rect width="1280" height="720" fill="#171922"/>
+  <g opacity="0.34">
+    <rect x="0" y="548" width="1280" height="172" fill="#22312a"/>
+    <rect x="126" y="436" width="88" height="112" fill="#2f6b55"/>
+    <rect x="214" y="388" width="88" height="160" fill="#315c7c"/>
+    <rect x="302" y="484" width="88" height="64" fill="#856849"/>
+    <rect x="850" y="324" width="116" height="224" fill="#675a8f"/>
+    <rect x="966" y="452" width="116" height="96" fill="#7c3f58"/>
+  </g>
+  <rect x="76" y="76" width="560" height="368" rx="6" fill="#11131d" opacity="0.88" stroke="#4c4666" stroke-width="2"/>
+  <text x="108" y="122" font-family="Verdana, Arial, sans-serif" font-size="24" fill="#fff1d4">Chat</text>
+  <text x="108" y="170" font-family="Verdana, Arial, sans-serif" font-size="20" fill="#8fe8c4">Alex</text>
+  <text x="178" y="170" font-family="Verdana, Arial, sans-serif" font-size="20" fill="#eee7db">placed a block near spawn</text>
+  <text x="108" y="218" font-family="Verdana, Arial, sans-serif" font-size="20" fill="#82b7ff">Mira</text>
+  <text x="178" y="218" font-family="Verdana, Arial, sans-serif" font-size="20" fill="#eee7db">found a cave entrance</text>
+  <text x="108" y="266" font-family="Verdana, Arial, sans-serif" font-size="20" fill="#f1d47a">Server</text>
+  <text x="190" y="266" font-family="Verdana, Arial, sans-serif" font-size="20" fill="#eee7db">autosaved world state</text>
+  <rect x="108" y="338" width="496" height="58" rx="4" fill="#242332" stroke="#62578e"/>
+  <text x="132" y="374" font-family="Verdana, Arial, sans-serif" font-size="20" fill="#f7f0df">/help</text>
+  <rect x="762" y="78" width="364" height="240" rx="6" fill="#11131d" opacity="0.88" stroke="#4c4666" stroke-width="2"/>
+  <text x="798" y="124" font-family="Verdana, Arial, sans-serif" font-size="24" fill="#fff1d4">Players</text>
+  <circle cx="820" cy="170" r="8" fill="#8fe8c4"/>
+  <text x="846" y="178" font-family="Verdana, Arial, sans-serif" font-size="20" fill="#eee7db">Alex</text>
+  <circle cx="820" cy="216" r="8" fill="#8fe8c4"/>
+  <text x="846" y="224" font-family="Verdana, Arial, sans-serif" font-size="20" fill="#eee7db">Mira</text>
+  <circle cx="820" cy="262" r="8" fill="#8f88a8"/>
+  <text x="846" y="270" font-family="Verdana, Arial, sans-serif" font-size="20" fill="#8f88a8">Dedicated server user hidden from play</text>
+  <text x="76" y="646" font-family="Verdana, Arial, sans-serif" font-size="18" fill="#918ca7">Chat opens on N or Enter. Command execution belongs to optional providers, not the standalone chat pack.</text>
+</svg>

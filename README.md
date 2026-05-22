@@ -2,6 +2,8 @@
 
 Experimental mods for Lucid Blocks.
 
+![Illustrated server browser screenshot](docs/assets/server-browser.svg)
+
 The project is being split into three packages:
 
 - `lucid-blocks-multiplayer.pck` - server-based multiplayer and dedicated server work.
@@ -18,6 +20,15 @@ Mr_Settle. We do not claim authorship of the original co-op mod, Lucid Blocks, o
 bundled third-party tools/assets.
 
 Full credits and release attribution rules are in [CREDITS.md](CREDITS.md).
+
+## Screenshots
+
+These are illustrated UI screenshots for the current MVP direction. They avoid
+private endpoints and show the intended public flow.
+
+![Chat and player list](docs/assets/chat-overlay.svg)
+
+![Dedicated server flow](docs/assets/dedicated-flow.svg)
 
 ## Status
 

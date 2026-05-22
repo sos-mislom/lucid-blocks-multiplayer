@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Dedicated server flow</title>
+  <desc id="desc">Architecture illustration showing players connecting by server name to a dedicated server-owned world.</desc>
+  <rect width="1280" height="720" fill="#11141c"/>
+  <text x="96" y="96" font-family="Verdana, Arial, sans-serif" font-size="38" fill="#fff1d4">Dedicated Server Flow</text>
+  <text x="96" y="134" font-family="Verdana, Arial, sans-serif" font-size="20" fill="#9d98b6">The world belongs to the server. Clients only join and send actions.</text>
+  <g font-family="Verdana, Arial, sans-serif">
+    <rect x="94" y="220" width="250" height="150" rx="8" fill="#202334" stroke="#62578e" stroke-width="2"/>
+    <text x="132" y="274" font-size="26" fill="#f7f0df">Player client</text>
+    <text x="132" y="314" font-size="18" fill="#a9a3bf">input, chat, view</text>
+    <rect x="94" y="430" width="250" height="150" rx="8" fill="#202334" stroke="#62578e" stroke-width="2"/>
+    <text x="132" y="484" font-size="26" fill="#f7f0df">Player client</text>
+    <text x="132" y="524" font-size="18" fill="#a9a3bf">input, chat, view</text>
+    <rect x="514" y="274" width="254" height="186" rx="8" fill="#1d2c2a" stroke="#8fe8c4" stroke-width="2"/>
+    <text x="560" y="336" font-size="28" fill="#e9fff5">Named server</text>
+    <text x="560" y="376" font-size="20" fill="#b7e9d8">QUALIA</text>
+    <text x="560" y="410" font-size="18" fill="#9dcbc0">raw address hidden</text>
+    <rect x="930" y="220" width="260" height="360" rx="8" fill="#2b2336" stroke="#d19aff" stroke-width="2"/>
+    <text x="974" y="284" font-size="28" fill="#fff1d4">Dedicated</text>
+    <text x="974" y="322" font-size="28" fill="#fff1d4">world host</text>
+    <text x="974" y="374" font-size="18" fill="#d2c8e8">server authoritative</text>
+    <text x="974" y="412" font-size="18" fill="#d2c8e8">chunk/save owner</text>
+    <text x="974" y="450" font-size="18" fill="#d2c8e8">block actions validated</text>
+    <text x="974" y="488" font-size="18" fill="#d2c8e8">drops/inventory synced</text>
+  </g>
+  <g stroke="#8fe8c4" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M348 294 C420 294 438 334 508 334"/>
+    <path d="M348 506 C420 506 438 400 508 400"/>
+    <path d="M772 368 C842 368 860 368 924 368"/>
+    <path d="M490 318 L508 334 L486 342"/>
+    <path d="M490 414 L508 400 L486 392"/>
+    <path d="M906 352 L924 368 L906 384"/>
+  </g>
+  <rect x="96" y="632" width="1088" height="42" rx="4" fill="#1d1c28"/>
+  <text x="124" y="660" font-family="Verdana, Arial, sans-serif" font-size="18" fill="#a9a3bf">Goal: no player has to keep their local Windows game open as the host.</text>
+</svg>

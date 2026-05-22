@@ -90,8 +90,6 @@ static func _load_avatar_dir(folder_name: String) -> Dictionary:
             folder_path + "/character.glb",
             folder_path + "/" + folder_name + ".glb",
             folder_path + "/low_poly_character.glb",
-            folder_path + "/mr_frog.glb",
-            folder_path + "/pim.glb",
         ]:
             var candidate: String = str(candidate_variant)
             if ResourceLoader.exists(candidate):
