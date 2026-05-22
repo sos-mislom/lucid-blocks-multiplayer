@@ -155,6 +155,8 @@ var dedicated_load_focus_valid: bool = false
 var dedicated_load_focus_position: Vector3 = Vector3.ZERO
 var dedicated_load_focus_peer_id: int = 0
 var dedicated_load_focus_timer: float = 0.0
+var dedicated_status_thread: Thread
+var dedicated_status_thread_running: bool = false
 var auto_connect_enabled: bool = false
 var auto_connect_started: bool = false
 var auto_connect_address: String = "127.0.0.1"
@@ -418,6 +420,10 @@ func _ready() -> void:
     elif auto_connect_enabled:
         print("[lucid-blocks-coop] auto-connect requested for %s:%s" % [auto_connect_address, auto_connect_port])
         call_deferred("_auto_connect_bootstrap")
+
+
+func _exit_tree() -> void:
+    _stop_dedicated_status_thread()
 
 
 func _get_coop_cmdline_args() -> Array[String]:
@@ -939,6 +945,7 @@ func _mark_dedicated_world_register(save_register: SaveFileRegister) -> void:
 func _start_dedicated_status_udp() -> void:
     if not dedicated_server_enabled or not dedicated_status_enabled:
         return
+    _stop_dedicated_status_thread()
     if dedicated_status_udp != null:
         dedicated_status_udp.close()
         dedicated_status_udp = null
@@ -951,9 +958,34 @@ func _start_dedicated_status_udp() -> void:
         return
 
     print("[lucid-blocks-coop] UDP status listening on port %s" % dedicated_status_port)
+    dedicated_status_thread_running = true
+    dedicated_status_thread = Thread.new()
+    var thread_err: Error = dedicated_status_thread.start(Callable(self, "_dedicated_status_thread_main"))
+    if thread_err != OK:
+        dedicated_status_thread_running = false
+        push_warning("[lucid-blocks-coop] UDP status thread failed to start: %s" % thread_err)
+
+
+func _stop_dedicated_status_thread() -> void:
+    dedicated_status_thread_running = false
+    if dedicated_status_thread != null:
+        dedicated_status_thread.wait_to_finish()
+        dedicated_status_thread = null
+
+
+func _dedicated_status_thread_main() -> void:
+    while dedicated_status_thread_running:
+        _poll_dedicated_status_udp(true)
+        OS.delay_msec(25)
 
 
 func _tick_dedicated_status_udp() -> void:
+    if dedicated_status_thread_running:
+        return
+    _poll_dedicated_status_udp(false)
+
+
+func _poll_dedicated_status_udp(thread_safe_payload: bool = false) -> void:
     if dedicated_status_udp == null:
         return
     while dedicated_status_udp.get_available_packet_count() > 0:
@@ -967,7 +999,35 @@ func _tick_dedicated_status_udp() -> void:
                 request = str(parsed_request.get("type", parsed_request.get("request", ""))).strip_edges().to_lower()
         if request == "" or request == "ping" or request == "status" or request == "health":
             dedicated_status_udp.set_dest_address(source_ip, source_port)
-            dedicated_status_udp.put_packet(JSON.stringify(_get_dedicated_status_payload()).to_utf8_buffer())
+            var payload: Dictionary = _get_dedicated_status_thread_payload() if thread_safe_payload else _get_dedicated_status_payload()
+            dedicated_status_udp.put_packet(JSON.stringify(payload).to_utf8_buffer())
+
+
+func _get_dedicated_status_thread_payload() -> Dictionary:
+    var ready: bool = dedicated_server_ready
+    var phase: String = dedicated_boot_phase if dedicated_boot_phase != "" else ("ready" if ready else "starting")
+    return {
+        "protocol": "lucid-blocks-coop-udp",
+        "ok": ready,
+        "status": phase,
+        "ready": ready,
+        "boot_phase": phase,
+        "game_port": dedicated_server_port,
+        "status_port": dedicated_status_port,
+        "transport": SESSION_TRANSPORT_LAN,
+        "message": status_message,
+        "players": 0,
+        "max_players": MAX_CLIENTS,
+        "world_title": dedicated_server_world_title,
+        "version": str(ProjectSettings.get("application/config/version")),
+        "target_tps": DEDICATED_TARGET_TPS,
+        "tps": snappedf(dedicated_current_tps, 0.1),
+        "min_tps": snappedf(dedicated_min_tps, 0.1),
+        "last_frame_ms": snappedf(dedicated_last_delta_ms, 0.1),
+        "tps_health": _get_dedicated_tps_health(),
+        "load_radius": dedicated_load_radius,
+        "buffer_radius": dedicated_buffer_radius,
+    }
 
 
 func _get_dedicated_status_payload() -> Dictionary:
