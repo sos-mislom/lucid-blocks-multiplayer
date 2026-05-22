@@ -2746,23 +2746,26 @@ func _build_main_menu_server_card(index: int, entry: Dictionary) -> Button:
 
 
 func _format_server_browser_entry(entry: Dictionary) -> String:
-    var address: String = str(entry.get("address", "127.0.0.1"))
-    var port: int = int(entry.get("port", DEFAULT_PORT))
     var status: String = str(entry.get("status", "unknown"))
+    var region: String = str(entry.get("region", "public")).strip_edges()
+    var region_text: String = region if region != "" else "public"
     if status == "online":
-        return "online  |  %s/%s players  |  %s:%s" % [
+        var tps_text: String = ""
+        if entry.has("tps"):
+            tps_text = "  |  %s TPS" % snappedf(float(entry.get("tps", 0.0)), 0.1)
+        return "online  |  %s/%s players%s  |  %s" % [
             int(entry.get("players", 0)),
             int(entry.get("max_players", MAX_CLIENTS)),
-            address,
-            port,
+            tps_text,
+            region_text,
         ]
     if status == "checking":
-        return "checking...  |  %s:%s" % [address, port]
+        return "checking secure endpoint...  |  %s" % region_text
     if status == "relay":
-        return "relay online, host waiting  |  %s:%s" % [address, port]
+        return "relay online, host waiting  |  %s" % region_text
     if status == "offline":
-        return "offline  |  %s:%s" % [address, port]
-    return "not checked  |  %s:%s" % [address, port]
+        return "offline  |  %s" % region_text
+    return "not checked  |  %s" % region_text
 
 
 func _refresh_main_menu_server_detail() -> void:
@@ -2883,6 +2886,10 @@ func _apply_server_browser_status(index: int, data: Dictionary) -> void:
     entry["players"] = int(data.get("players", entry.get("players", 0)))
     entry["max_players"] = int(data.get("max_players", entry.get("max_players", MAX_CLIENTS)))
     entry["world_title"] = str(data.get("world_title", entry.get("world_title", entry.get("name", "Server"))))
+    if data.has("tps"):
+        entry["tps"] = float(data.get("tps", entry.get("tps", 0.0)))
+    if data.has("tps_health"):
+        entry["tps_health"] = str(data.get("tps_health", entry.get("tps_health", "")))
     if int(data.get("game_port", 0)) > 0:
         entry["port"] = int(data.get("game_port", entry.get("port", DEFAULT_PORT)))
     if int(data.get("status_port", 0)) > 0:

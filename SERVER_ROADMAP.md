@@ -598,6 +598,7 @@ Good release target:
 - `V`/`C` camera/zoom behavior should be treated as a separate client visual mod, not mandatory coop behavior.
 - Server UI must hide technical endpoint details from normal players. Use server names; keep addresses/ports in private admin docs/config.
 - Server list should become remotely discoverable via manifest/registry so servers can be added without rebuilding the mod.
+- Server browser card details should never show player-facing IP/port; cards show friendly name, region, status, players and TPS only.
 - Chunk divergence is now a tracked gameplay blocker. Plan is authoritative hash/reconcile/resync, with optional ghost/translucent predicted blocks as UX.
 - Singleplayer backup prompt/regression is highest priority before further release packaging.
 
