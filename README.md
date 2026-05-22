@@ -136,6 +136,10 @@ SteamLibrary/steamapps/common/lucid-blocks/lucid-blocks/mods
 
 Do not install old mixed/debug packages together with release packages unless you are intentionally testing conflicts.
 
+Friend install guide:
+
+- Russian: [docs/FRIEND_INSTALL_RU.md](docs/FRIEND_INSTALL_RU.md)
+
 ## Dedicated Server Docs
 
 - Russian: [docs/LINUX_SERVER_RU.md](docs/LINUX_SERVER_RU.md)
