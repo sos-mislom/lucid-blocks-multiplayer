@@ -41,14 +41,48 @@ function Export-Pack {
         throw "$Label project dir not found: $ProjectDir"
     }
 
-    if (Test-Path $OutFile) {
-        Remove-Item -Force $OutFile
+    $outDir = Split-Path -Parent $OutFile
+    New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+    $tempOutFile = Join-Path $outDir (".tmp-" + [IO.Path]::GetFileName($OutFile))
+    $stdoutFile = Join-Path $outDir (".tmp-" + [IO.Path]::GetFileName($OutFile) + ".stdout.log")
+    $stderrFile = Join-Path $outDir (".tmp-" + [IO.Path]::GetFileName($OutFile) + ".stderr.log")
+
+    foreach ($tempFile in @($tempOutFile, $stdoutFile, $stderrFile)) {
+        if (Test-Path $tempFile) {
+            Remove-Item -Force -LiteralPath $tempFile
+        }
     }
 
     Write-Host "Building $Label -> $OutFile"
-    & $GodotExe --headless --path $ProjectDir --export-pack "Linux/X11" $OutFile
-    if ($LASTEXITCODE -ne 0) {
-        throw "$Label export failed with exit code $LASTEXITCODE"
+    $args = @("--headless", "--path", $ProjectDir, "--export-pack", "Linux/X11", $tempOutFile)
+    $process = Start-Process `
+        -FilePath $GodotExe `
+        -ArgumentList $args `
+        -NoNewWindow `
+        -Wait `
+        -PassThru `
+        -RedirectStandardOutput $stdoutFile `
+        -RedirectStandardError $stderrFile
+
+    if (Test-Path $stdoutFile) {
+        Get-Content -LiteralPath $stdoutFile | ForEach-Object { Write-Host $_ }
+    }
+    if (Test-Path $stderrFile) {
+        Get-Content -LiteralPath $stderrFile | ForEach-Object { Write-Host $_ }
+    }
+
+    if ($process.ExitCode -ne 0) {
+        throw "$Label export failed with exit code $($process.ExitCode)"
+    }
+    if (-not (Test-Path $tempOutFile)) {
+        throw "$Label export did not produce output file: $tempOutFile"
+    }
+
+    Move-Item -Force -LiteralPath $tempOutFile -Destination $OutFile
+    foreach ($tempFile in @($stdoutFile, $stderrFile)) {
+        if (Test-Path $tempFile) {
+            Remove-Item -Force -LiteralPath $tempFile
+        }
     }
 }
 

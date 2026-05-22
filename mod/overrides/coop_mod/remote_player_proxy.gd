@@ -1,11 +1,37 @@
-extends "res://main/entity/player/player.gd"
-class_name RemotePlayerProxy
+extends CharacterBody3D
 
 
 const STAND_HEAD_HEIGHT: float = 1.45
 const CROUCH_HEAD_HEIGHT: float = 1.1
 
 
+var max_health: int = 10
+var health: int = 10
+var speed: float = 3.9
+var dead: bool = false
+var disabled: bool = false
+var invincible: bool = true
+var invincible_temporary: bool = true
+var movement_enabled: bool = false
+var can_rename: bool = false
+var disabled_by_visibility: bool = false
+var checks_for_water: bool = false
+var first_frame: bool = false
+var under_water: bool = false
+var head_under_water: bool = false
+var feet_under_water: bool = false
+var direct_damage_cooldown: bool = false
+var movement_velocity: Vector3 = Vector3.ZERO
+var gravity_velocity: Vector3 = Vector3.ZERO
+var knockback_velocity: Vector3 = Vector3.ZERO
+var rope_velocity: Vector3 = Vector3.ZERO
+var head: Marker3D = null
+var hand: Marker3D = null
+var rotation_pivot: Node3D = null
+var minimum_sprint_speed: float = 1.0
+var is_sprinting: bool = false
+var is_crouching: bool = false
+var push_bodies: Dictionary = {}
 var grounded: bool = true
 var crouching: bool = false
 var _last_position: Vector3 = Vector3.ZERO
