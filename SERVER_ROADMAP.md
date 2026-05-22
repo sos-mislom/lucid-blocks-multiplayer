@@ -602,6 +602,7 @@ Good release target:
 - Server registry support started: client can merge built-in entries, local `user://lucid_blocks_server_registry.json`, and optional remote `server_registry_url`.
 - Core multiplayer now gates console/debug commands by default with `enable_debug_console_commands=false`; `/give`, `/gamemode`, `/spawn`, `/spawnlist`, `/spawnmenu`, `/time`, `/weather`, `/kill` and `/fly` are hidden from autocomplete/help and rejected unless explicitly enabled for a dev/debug build.
 - Chat autocomplete now treats full-command suggestions as replacements, fixing the `/give 1 /give 1 ...` duplicated insertion class of bugs.
+- Player inventory drops now use a reliable same-instance direct spawn event plus a short client-side grace window, so a drop thrown by the second connected player should not disappear before the observer receives the next filtered world-state snapshot.
 - Chunk divergence is now a tracked gameplay blocker. Plan is authoritative hash/reconcile/resync, with optional ghost/translucent predicted blocks as UX.
 - Singleplayer backup prompt/regression is highest priority before further release packaging.
 
@@ -706,5 +707,6 @@ Good release target:
   - Linux cleanup script now removes Proton/Wine child processes by dedicated cgroup and Proton prefix, preventing leftover `winedevice/rpcss/tabtip` after service restart.
   - Server registry MVP added: local `user://lucid_blocks_server_registry.json` plus optional remote `server_registry_url`; server cards hide raw endpoints.
   - Latest local debug-gated PCK hash: `3A3179BA4FCBC081720480E678AAB47B55544385AEA36D9373A066B53D4991E4`.
+  - Latest local player-drop visibility PCK hash: `F058A1C4DED4F1827B0FAB51A2D4EBF12CF934B7EDF89DBE66476223C19C88D2`.
   - VPS deploy of the debug-gated PCK was attempted but not kept: local status readiness timed out after restart, so the VPS PCK was rolled back to `D4F56302CE8ED678F6C66057EF14D1DC2DC933AA63508E8A04D68A2F300238A4` while the launch/readiness issue is investigated.
   - Latest native DLL hash, currently kept disabled on Linux VPS: `90603A319475355D73A8661A5DFC948F3AAFFBBD453209CC7CD3C6E5DBA24164`.

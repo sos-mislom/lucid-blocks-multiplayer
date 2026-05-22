@@ -79,6 +79,7 @@ const CLIENT_PREDICTED_DROP_LIFETIME: float = 1.5
 const CLIENT_PENDING_PICKUP_LIFETIME: float = 4.0
 const CLIENT_AUTO_PICKUP_RADIUS: float = 2.35
 const CLIENT_PREDICTED_DROP_SYNC_GRACE_MS: int = 350
+const CLIENT_DIRECT_DROP_SYNC_GRACE_MS: int = 900
 const CLIENT_DROP_MERGE_ANIMATION_DISTANCE: float = 2.6
 const CLIENT_DROP_MERGE_ANIMATION_TIME: float = 0.12
 const CLIENT_PICKUP_PULL_ANIMATION_TIME: float = 0.1
@@ -12667,18 +12668,35 @@ func _is_peer_interested_in_position(peer_id: int, world_position: Vector3, radi
     return peer_position.distance_squared_to(world_position) <= radius * radius
 
 
-func _sync_spawn_drop_to_interested_peers(drop_uuid: String, item_data: PackedInt32Array, drop_position: Vector3, drop_velocity: Vector3, can_collect: bool) -> void:
+func _sync_spawn_drop_to_interested_peers(drop_uuid: String, item_data: PackedInt32Array, drop_position: Vector3, drop_velocity: Vector3, can_collect: bool, source_peer_id: int = 0, source_instance_key: String = "", force_same_instance_peers: bool = false) -> int:
     if not multiplayer.is_server() or not _has_live_peer():
-        return
-    var active_instance_key: String = get_active_dimension_instance_key()
+        return 0
+    var sent_count: int = 0
+    var active_instance_key: String = source_instance_key.strip_edges()
+    if active_instance_key == "":
+        active_instance_key = get_active_dimension_instance_key()
     for peer_id in peer_states.keys():
         var int_peer_id: int = int(peer_id)
         if int_peer_id == multiplayer.get_unique_id():
             continue
-        if not _is_peer_interested_in_position(int_peer_id, drop_position, DROP_SYNC_RADIUS, active_instance_key):
+        var peer_state: Dictionary = peer_states.get(peer_id, {})
+        if peer_state.is_empty() and peer_states.has(int_peer_id):
+            peer_state = peer_states[int_peer_id]
+        var should_send: bool = int_peer_id == source_peer_id
+        if not should_send and force_same_instance_peers:
+            should_send = _is_peer_state_same_instance(peer_state, active_instance_key)
+        if not should_send:
+            should_send = _is_peer_interested_in_position(int_peer_id, drop_position, DROP_SYNC_RADIUS, active_instance_key)
+        if not should_send:
             continue
         sync_spawn_drop.rpc_id(int_peer_id, drop_uuid, item_data, drop_position, drop_velocity, can_collect)
         host_interest_spawn_drop_sends += 1
+        sent_count += 1
+    if source_peer_id > 1 and sent_count == 0:
+        sync_spawn_drop.rpc_id(source_peer_id, drop_uuid, item_data, drop_position, drop_velocity, can_collect)
+        host_interest_spawn_drop_sends += 1
+        sent_count += 1
+    return sent_count
 
 
 func _capture_host_entity_snapshots(focus_position: Vector3, peer_id: int = 0) -> Array:
@@ -12983,8 +13001,11 @@ func _apply_client_drop_snapshots(drop_snapshots: Array) -> void:
     for uuid in synced_dropped_items.keys().duplicate():
         if visible_uuids.has(uuid):
             continue
-        if is_instance_valid(synced_dropped_items[uuid]):
-            _queue_runtime_node_for_cleanup(synced_dropped_items[uuid])
+        var synced_drop = synced_dropped_items[uuid]
+        if is_instance_valid(synced_drop) and _is_client_drop_sync_grace_active(synced_drop):
+            continue
+        if is_instance_valid(synced_drop):
+            _queue_runtime_node_for_cleanup(synced_drop)
         synced_dropped_items.erase(uuid)
 
     _remove_unlisted_client_drops(visible_uuids)
@@ -13186,6 +13207,8 @@ func _remove_unlisted_client_drops(visible_uuids: Dictionary) -> void:
             continue
         if child.state == DroppedItem.COLLECTED:
             continue
+        if _is_client_drop_sync_grace_active(child):
+            continue
         if bool(child.get_meta("coop_predicted_drop", false)):
             continue
         var uuid: String = _get_sync_uuid(child)
@@ -13196,6 +13219,12 @@ func _remove_unlisted_client_drops(visible_uuids: Dictionary) -> void:
                 _animate_client_drop_collect_removal.call_deferred(child)
             else:
                 _animate_client_drop_merge_removal.call_deferred(child)
+
+
+func _is_client_drop_sync_grace_active(dropped_item) -> bool:
+    if dropped_item == null or not is_instance_valid(dropped_item):
+        return false
+    return Time.get_ticks_msec() < int(dropped_item.get_meta("coop_direct_spawn_grace_until_ms", 0))
 
 
 func _configure_client_synced_entity(entity, uuid: String) -> void:
@@ -14967,7 +14996,13 @@ func request_drop_item(item_data: PackedInt32Array, spawn_position: Vector3, lau
     dropped_item.initialize(item_state)
     dropped_item.global_position = spawn_position + Vector3(0.5, 0.5, 0.5)
     dropped_item.velocity = launch_velocity
-    _sync_spawn_drop_to_interested_peers(drop_uuid, item_data, dropped_item.global_position, dropped_item.velocity, bool(dropped_item.can_collect))
+    var sender_state: Dictionary = peer_states.get(sender_id, {})
+    if sender_state.is_empty() and peer_states.has(str(sender_id)):
+        sender_state = peer_states[str(sender_id)]
+    var sender_instance_key: String = str(sender_state.get("dimension_instance_key", get_active_dimension_instance_key()))
+    var sent_count: int = _sync_spawn_drop_to_interested_peers(drop_uuid, item_data, dropped_item.global_position, dropped_item.velocity, bool(dropped_item.can_collect), sender_id, sender_instance_key, true)
+    if dedicated_server_enabled:
+        print("[lucid-blocks-coop] Dedicated item_drop spawned request=%s peer=%s uuid=%s sent=%s" % [request_id, sender_id, drop_uuid, sent_count])
     _ack_item_action(sender_id, request_id, "drop", true, drop_uuid, "", started_msec)
 
 
@@ -15734,6 +15769,7 @@ func sync_spawn_drop(drop_uuid: String, item_data: PackedInt32Array, drop_positi
     if not is_instance_valid(dropped_item):
         return
 
+    dropped_item.set_meta("coop_direct_spawn_grace_until_ms", Time.get_ticks_msec() + CLIENT_DIRECT_DROP_SYNC_GRACE_MS)
     synced_dropped_items[drop_uuid] = dropped_item
     _apply_client_drop_snapshot(dropped_item, item_state, drop_position, drop_velocity, can_collect)
 
