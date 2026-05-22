@@ -4,6 +4,7 @@ extends Node
 const AvatarRegistry = preload("res://coop_mod/avatar_registry.gd")
 const RemotePlayerMarkerScript = preload("res://coop_mod/remote_player_marker.gd")
 const CONFIG_PATH: String = "user://lucid_blocks_coop_config.json"
+const SERVER_REGISTRY_PATH: String = "user://lucid_blocks_server_registry.json"
 const DEFAULT_PORT: int = 24667
 const MAX_CLIENTS: int = 4
 const DEFAULT_DEDICATED_WORLD_TITLE: String = "Dedicated Coop"
@@ -120,6 +121,7 @@ var config: Dictionary = {
     "address": "127.0.0.1",
     "port": DEFAULT_PORT,
     "avatar_id": DEFAULT_AVATAR_ID,
+    "server_registry_url": "",
 }
 var dedicated_server_enabled: bool = false
 var dedicated_server_started: bool = false
@@ -357,9 +359,12 @@ var main_menu_selected_tab: String = "servers"
 var main_menu_player_signature: String = ""
 var main_menu_coop_status_label: Label
 var server_browser_udp: PacketPeerUDP
+var server_browser_registry_request: HTTPRequest
 var server_browser_entries: Array = []
 var server_browser_pending: Dictionary = {}
 var server_browser_deadline_msec: int = 0
+var server_browser_local_registry_loaded: bool = false
+var server_browser_remote_registry_requested: bool = false
 
 
 func _ready() -> void:
@@ -2650,20 +2655,137 @@ func _refresh_main_menu_coop_status() -> void:
 
 
 func _ensure_server_browser_entries() -> void:
-    if not server_browser_entries.is_empty():
-        return
-    for server in DEFAULT_PUBLIC_SERVERS:
-        if not (server is Dictionary):
+    if server_browser_entries.is_empty():
+        _merge_server_browser_registry(DEFAULT_PUBLIC_SERVERS)
+    _load_local_server_browser_registry()
+    _request_remote_server_browser_registry()
+
+
+func _make_server_browser_entry_key(entry: Dictionary) -> String:
+    var endpoint_key: String = str(entry.get("endpoint_key", entry.get("hidden_endpoint_key", ""))).strip_edges()
+    if endpoint_key != "":
+        return "key:" + endpoint_key
+    var address: String = str(entry.get("address", "")).strip_edges()
+    var status_port: int = int(entry.get("status_port", int(entry.get("port", DEFAULT_PORT)) + DEFAULT_STATUS_PORT_OFFSET))
+    if address != "":
+        return "udp:%s:%s" % [address, status_port]
+    return "name:" + str(entry.get("name", entry.get("world_title", "Server"))).strip_edges().to_lower()
+
+
+func _normalize_server_browser_entry(raw_entry: Dictionary) -> Dictionary:
+    var address: String = str(raw_entry.get("address", raw_entry.get("host", ""))).strip_edges()
+    if address == "":
+        return {}
+
+    var port: int = int(raw_entry.get("port", DEFAULT_PORT))
+    var status_port: int = int(raw_entry.get("status_port", port + DEFAULT_STATUS_PORT_OFFSET))
+    var name: String = str(raw_entry.get("name", raw_entry.get("world_title", "Server"))).strip_edges()
+    if name == "":
+        name = "Server"
+
+    var entry: Dictionary = raw_entry.duplicate(true)
+    entry["name"] = name
+    entry["world_title"] = str(entry.get("world_title", name))
+    entry["address"] = address
+    entry["port"] = clampi(port, 1, 65535)
+    entry["status_port"] = clampi(status_port, 1, 65535)
+    entry["region"] = str(entry.get("region", "public")).strip_edges()
+    entry["status"] = str(entry.get("status", "unknown"))
+    entry["players"] = int(entry.get("players", 0))
+    entry["max_players"] = int(entry.get("max_players", MAX_CLIENTS))
+    entry["message"] = str(entry.get("message", ""))
+    var file_color_1: Variant = entry.get("file_color_1", Color.from_hsv(0.58, 0.32, 0.95))
+    var file_color_2: Variant = entry.get("file_color_2", Color.from_hsv(0.09, 0.62, 0.8))
+    entry["file_color_1"] = file_color_1 if file_color_1 is Color else Color.from_hsv(0.58, 0.32, 0.95)
+    entry["file_color_2"] = file_color_2 if file_color_2 is Color else Color.from_hsv(0.09, 0.62, 0.8)
+    return entry
+
+
+func _merge_server_browser_registry(raw_servers: Variant) -> bool:
+    if not (raw_servers is Array):
+        return false
+
+    var changed: bool = false
+    for raw_entry in raw_servers:
+        if not (raw_entry is Dictionary):
             continue
-        var entry: Dictionary = server.duplicate(true)
-        entry["status"] = "unknown"
-        entry["players"] = 0
-        entry["max_players"] = MAX_CLIENTS
-        entry["world_title"] = str(entry.get("name", "Server"))
-        entry["message"] = ""
-        entry["file_color_1"] = Color.from_hsv(0.58, 0.32, 0.95)
-        entry["file_color_2"] = Color.from_hsv(0.09, 0.62, 0.8)
-        server_browser_entries.append(entry)
+        var entry: Dictionary = _normalize_server_browser_entry(raw_entry)
+        if entry.is_empty():
+            continue
+        var entry_key: String = _make_server_browser_entry_key(entry)
+        var existing_index: int = -1
+        for index in range(server_browser_entries.size()):
+            if _make_server_browser_entry_key(server_browser_entries[index]) == entry_key:
+                existing_index = index
+                break
+        if existing_index >= 0:
+            var merged_entry: Dictionary = server_browser_entries[existing_index]
+            merged_entry.merge(entry, true)
+            server_browser_entries[existing_index] = merged_entry
+        else:
+            server_browser_entries.append(entry)
+        changed = true
+    return changed
+
+
+func _merge_server_browser_registry_data(data: Variant) -> bool:
+    if data is Dictionary:
+        return _merge_server_browser_registry(data.get("servers", []))
+    if data is Array:
+        return _merge_server_browser_registry(data)
+    return false
+
+
+func _load_local_server_browser_registry() -> void:
+    if server_browser_local_registry_loaded:
+        return
+    server_browser_local_registry_loaded = true
+    if not FileAccess.file_exists(SERVER_REGISTRY_PATH):
+        return
+
+    var file: FileAccess = FileAccess.open(SERVER_REGISTRY_PATH, FileAccess.READ)
+    if file == null:
+        return
+    var data: Variant = JSON.parse_string(file.get_as_text())
+    if _merge_server_browser_registry_data(data):
+        print("[lucid-blocks-coop] loaded local server registry")
+
+
+func _request_remote_server_browser_registry() -> void:
+    if server_browser_remote_registry_requested:
+        return
+    var registry_url: String = str(config.get("server_registry_url", "")).strip_edges()
+    if registry_url == "":
+        return
+    if not (registry_url.begins_with("https://") or registry_url.begins_with("http://")):
+        push_warning("[lucid-blocks-coop] Ignoring invalid server_registry_url")
+        server_browser_remote_registry_requested = true
+        return
+
+    server_browser_remote_registry_requested = true
+    server_browser_registry_request = HTTPRequest.new()
+    server_browser_registry_request.timeout = 6.0
+    server_browser_registry_request.request_completed.connect(_on_server_browser_registry_completed)
+    add_child(server_browser_registry_request)
+    var err: Error = server_browser_registry_request.request(registry_url)
+    if err != OK:
+        push_warning("[lucid-blocks-coop] Server registry request failed to start: %s" % err)
+        server_browser_registry_request.queue_free()
+        server_browser_registry_request = null
+
+
+func _on_server_browser_registry_completed(_result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+    if server_browser_registry_request != null:
+        server_browser_registry_request.queue_free()
+        server_browser_registry_request = null
+    if response_code < 200 or response_code >= 300:
+        push_warning("[lucid-blocks-coop] Server registry returned HTTP %s" % response_code)
+        return
+
+    var data: Variant = JSON.parse_string(body.get_string_from_utf8())
+    if _merge_server_browser_registry_data(data):
+        _refresh_server_browser_entries()
+        _request_server_browser_refresh()
 
 
 func _refresh_server_browser_entries() -> void:
@@ -11451,6 +11573,7 @@ func _load_config(announce: bool = false) -> void:
         "address": "127.0.0.1",
         "port": DEFAULT_PORT,
         "avatar_id": DEFAULT_AVATAR_ID,
+        "server_registry_url": "",
     }
 
     if not FileAccess.file_exists(CONFIG_PATH):

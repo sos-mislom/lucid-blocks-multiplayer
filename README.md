@@ -144,6 +144,7 @@ Friend install guide:
 
 - Russian: [docs/LINUX_SERVER_RU.md](docs/LINUX_SERVER_RU.md)
 - English: [docs/LINUX_SERVER_EN.md](docs/LINUX_SERVER_EN.md)
+- Server registry: [docs/SERVER_REGISTRY.md](docs/SERVER_REGISTRY.md)
 
 ## Roadmap
 
