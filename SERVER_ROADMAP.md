@@ -719,4 +719,5 @@ Good release target:
   - Added and tested `scripts/package_friend_release.ps1`: it builds `dist/lucid-blocks-multiplayer-mvp.zip` from the current multiplayer PCK, friend install guide, Linux server docs, registry docs, and README screenshots.
   - Latest friend-ready zip hash: `5CD649DA883E7C37A4D1AF7468094E5639EC30EC60F767F003131119456146B7`.
   - Friend zip endpoint scan passed: no private host address, public test port literals, or internal public-entry names are present in the packaged docs/PCK.
+  - GitHub prerelease `v0.1.4-mvp` published at `https://github.com/sos-mislom/lucid-blocks-multiplayer/releases/tag/v0.1.4-mvp` with the current multiplayer PCK and friend-ready zip.
   - Latest native DLL hash, currently kept disabled on Linux VPS: `90603A319475355D73A8661A5DFC948F3AAFFBBD453209CC7CD3C6E5DBA24164`.
