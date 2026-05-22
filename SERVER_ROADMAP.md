@@ -600,6 +600,8 @@ Good release target:
 - Server list should become remotely discoverable via manifest/registry so servers can be added without rebuilding the mod.
 - Server browser card details should never show player-facing IP/port; cards show friendly name, region, status, players and TPS only.
 - Server registry support started: client can merge built-in entries, local `user://lucid_blocks_server_registry.json`, and optional remote `server_registry_url`.
+- Core multiplayer now gates console/debug commands by default with `enable_debug_console_commands=false`; `/give`, `/gamemode`, `/spawn`, `/spawnlist`, `/spawnmenu`, `/time`, `/weather`, `/kill` and `/fly` are hidden from autocomplete/help and rejected unless explicitly enabled for a dev/debug build.
+- Chat autocomplete now treats full-command suggestions as replacements, fixing the `/give 1 /give 1 ...` duplicated insertion class of bugs.
 - Chunk divergence is now a tracked gameplay blocker. Plan is authoritative hash/reconcile/resync, with optional ghost/translucent predicted blocks as UX.
 - Singleplayer backup prompt/regression is highest priority before further release packaging.
 
@@ -703,4 +705,5 @@ Good release target:
   - Remote player proxy no longer inherits the full local `Player` script; export is clean without `RemotePlayerProxy/Player` parse errors.
   - Linux cleanup script now removes Proton/Wine child processes by dedicated cgroup and Proton prefix, preventing leftover `winedevice/rpcss/tabtip` after service restart.
   - Server registry MVP added: local `user://lucid_blocks_server_registry.json` plus optional remote `server_registry_url`; server cards hide raw endpoints.
+  - Latest local debug-gated PCK hash: `3A3179BA4FCBC081720480E678AAB47B55544385AEA36D9373A066B53D4991E4`.
   - Latest native DLL hash, currently kept disabled on Linux VPS: `90603A319475355D73A8661A5DFC948F3AAFFBBD453209CC7CD3C6E5DBA24164`.

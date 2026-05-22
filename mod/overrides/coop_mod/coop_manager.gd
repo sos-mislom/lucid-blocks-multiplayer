@@ -98,6 +98,11 @@ const CLIENT_SYNCED_ENTITY_VISUAL_MID_INTERVAL: float = 1.0 / 30.0
 const CLIENT_SYNCED_ENTITY_VISUAL_FAR_INTERVAL: float = 1.0 / 15.0
 const DEBUG_SPAWN_DISTANCE: float = 6.0
 const DEBUG_SPAWN_RESOURCE_DIR: String = "res://main/items/data/spawners"
+const ENABLE_DEBUG_CONSOLE_COMMANDS_DEFAULT: bool = false
+const CORE_DEBUG_COMMAND_NAMES: PackedStringArray = [
+    "/give", "/gamemode", "/gm", "/spawn", "/spawnlist", "/spawnmenu", "/mobs",
+    "/time", "/weather", "/kill", "/fly"
+]
 const STEAM_LOBBY_TYPE_FRIENDS_ONLY: int = 1
 const STEAM_RESULT_OK: int = 1
 const STEAM_CHAT_ROOM_ENTER_RESPONSE_SUCCESS: int = 1
@@ -122,6 +127,7 @@ var config: Dictionary = {
     "port": DEFAULT_PORT,
     "avatar_id": DEFAULT_AVATAR_ID,
     "server_registry_url": "",
+    "enable_debug_console_commands": ENABLE_DEBUG_CONSOLE_COMMANDS_DEFAULT,
 }
 var dedicated_server_enabled: bool = false
 var dedicated_server_started: bool = false
@@ -4684,6 +4690,9 @@ func execute_command(raw_text: String) -> void:
 
     var parts: PackedStringArray = text.split(" ", false)
     var command: String = parts[0].to_lower()
+    if _is_core_debug_command(command) and not _are_console_debug_commands_enabled():
+        _reject_core_debug_command(command)
+        return
 
     match command:
         "/help":
@@ -4773,6 +4782,27 @@ func execute_command(raw_text: String) -> void:
 
 
 
+
+
+func _are_console_debug_commands_enabled() -> bool:
+    return bool(config.get("enable_debug_console_commands", ENABLE_DEBUG_CONSOLE_COMMANDS_DEFAULT))
+
+
+func _is_core_debug_command(command: String) -> bool:
+    var normalized: String = command.strip_edges().to_lower()
+    for debug_command in CORE_DEBUG_COMMAND_NAMES:
+        if normalized == str(debug_command):
+            return true
+    return false
+
+
+func _is_core_debug_autocomplete_command(command_body: String) -> bool:
+    return _is_core_debug_command("/" + command_body.strip_edges().to_lower())
+
+
+func _reject_core_debug_command(command: String) -> void:
+    status_message = "%s is in the optional console/debug mod" % command
+    _update_status_text()
 
 
 func _execute_home_command() -> void:
@@ -5064,9 +5094,12 @@ func get_command_autocomplete_entries(raw_text: String) -> Array:
     if not has_space:
         if command_body == "tp":
             return _get_tp_command_autocomplete_entries("")
-        if command_body == "spawnmenu" or command_body == "mobs":
+        if (command_body == "spawnmenu" or command_body == "mobs") and _are_console_debug_commands_enabled():
             return [_make_command_autocomplete_entry("/spawnmenu", "/spawnmenu", "Open the mob spawn browser")]
         return _get_root_command_autocomplete_entries(command_body)
+
+    if _is_core_debug_autocomplete_command(command_body) and not _are_console_debug_commands_enabled():
+        return entries
 
     match command_body:
         "give":
@@ -5164,27 +5197,24 @@ func _get_root_command_autocomplete_entries(query: String) -> Array:
         {"command": "/steam_invite", "hint": "Open Steam invite dialog"},
         {"command": "/steam_join", "hint": "Join `lobby_id` through Steam"},
         {"command": "/tp", "hint": "Teleport to a connected player"},
-        {"command": "/gamemode", "hint": "Session-only creative or survival"},
-        {"command": "/spawn", "hint": "Spawn a mob for testing"},
-        {"command": "/spawnmenu", "hint": "Open the mob spawn browser"},
-        {"command": "/spawnlist", "hint": "List spawnable mob ids"},
         {"command": "/avatar", "hint": "Set your avatar id"},
         {"command": "/char-select", "hint": "Open character select menu"},
         {"command": "/list", "hint": "List connected players"},
-        {"command": "/time", "hint": "Change world time"},
-        {"command": "/weather", "hint": "Change world weather"},
-        {"command": "/kill", "hint": "Kill yourself"},
         {"command": "/home", "hint": "Teleport to pocket dimension"},
-        {"command": "/give", "hint": "Give yourself an item"},
-        {"command": "/help", "hint": "List all commands"},
-        {"command": "/list", "hint": "List connected players"},
-        {"command": "/time", "hint": "Change world time"},
-        {"command": "/weather", "hint": "Change world weather"},
-        {"command": "/kill", "hint": "Kill yourself"},
-        {"command": "/home", "hint": "Teleport to pocket dimension"},
-        {"command": "/give", "hint": "Give yourself an item"},
         {"command": "/help", "hint": "List all commands"},
     ]
+    if _are_console_debug_commands_enabled():
+        commands.append_array([
+            {"command": "/gamemode", "hint": "Session-only creative or survival"},
+            {"command": "/spawn", "hint": "Spawn a mob for testing"},
+            {"command": "/spawnmenu", "hint": "Open the mob spawn browser"},
+            {"command": "/spawnlist", "hint": "List spawnable mob ids"},
+            {"command": "/time", "hint": "Change world time"},
+            {"command": "/weather", "hint": "Change world weather"},
+            {"command": "/kill", "hint": "Kill yourself"},
+            {"command": "/give", "hint": "Give yourself an item"},
+            {"command": "/fly", "hint": "Toggle fly mode"},
+        ])
     var lowered_query: String = query.to_lower()
     var entries: Array = []
     for command_entry in commands:
@@ -11574,6 +11604,7 @@ func _load_config(announce: bool = false) -> void:
         "port": DEFAULT_PORT,
         "avatar_id": DEFAULT_AVATAR_ID,
         "server_registry_url": "",
+        "enable_debug_console_commands": ENABLE_DEBUG_CONSOLE_COMMANDS_DEFAULT,
     }
 
     if not FileAccess.file_exists(CONFIG_PATH):
@@ -15961,7 +15992,10 @@ func server_snapshot_reliable(snapshot_sequence: int, snapshot: Array) -> void:
     server_snapshot(snapshot_sequence, snapshot)
 
 func _execute_help_command() -> void:
-    status_message = "Commands: /give /tp /visit /gamemode /spawn /spawnlist /spawnmenu /time /weather /host /join /avatar /char-select"
+    var commands: Array = ["/host", "/join", "/steam_host", "/steam_invite", "/tp", "/list", "/home", "/char-select", "/avatar"]
+    if _are_console_debug_commands_enabled():
+        commands.append_array(["/give", "/gamemode", "/spawn", "/spawnlist", "/spawnmenu", "/time", "/weather", "/kill", "/fly"])
+    status_message = "Commands: %s" % " ".join(commands)
     _update_status_text()
 
 
