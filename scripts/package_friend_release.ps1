@@ -50,6 +50,13 @@ try {
     Add-ZipEntry -Source (Join-Path $RootDir "docs\assets\chat-overlay.svg") -EntryName "images\chat-overlay.svg"
     Add-ZipEntry -Source (Join-Path $RootDir "docs\assets\dedicated-flow.svg") -EntryName "images\dedicated-flow.svg"
     Add-ZipEntry -Source (Join-Path $RootDir "docs\assets\server-browser.svg") -EntryName "images\server-browser.svg"
+
+    $screenshotsDir = Join-Path $RootDir "docs\assets\screenshots"
+    if (Test-Path $screenshotsDir) {
+        Get-ChildItem -LiteralPath $screenshotsDir -File | Where-Object { $_.Extension -in ".png", ".jpg", ".jpeg", ".webp" } | ForEach-Object {
+            Add-ZipEntry -Source $_.FullName -EntryName ("screenshots\" + $_.Name)
+        }
+    }
 } finally {
     $zip.Dispose()
 }

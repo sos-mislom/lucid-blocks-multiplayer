@@ -2,7 +2,7 @@
 
 Experimental mods for Lucid Blocks.
 
-![Illustrated server browser screenshot](docs/assets/server-browser.svg)
+![Lucid Blocks multiplayer main menu with QUALIA server entry](docs/assets/screenshots/main-menu-qualia.png)
 
 The project is being split into three packages:
 
@@ -23,8 +23,14 @@ Full credits and release attribution rules are in [CREDITS.md](CREDITS.md).
 
 ## Screenshots
 
-These are illustrated UI screenshots for the current MVP direction. They avoid
-private endpoints and show the intended public flow.
+Real captured screenshots are kept in `docs/assets/screenshots`. Release notes
+and friend packages should use those PNGs first, not diagrams.
+
+![QUALIA multiplayer entry](docs/assets/screenshots/main-menu-qualia.png)
+
+The diagrams below are UI mockups for the current MVP direction. They avoid
+private endpoints and show the intended public flow, but they are not gameplay
+screenshots.
 
 ![Chat and player list](docs/assets/chat-overlay.svg)
 

@@ -717,7 +717,8 @@ Good release target:
   - VPS readiness issue found: the game also uses nested `lucid-blocks/mods`; old large coop PCKs there could shadow/conflict with the current release. Current deployed PCK hash in both mod locations is `FB56C7C02AE169DBC8FD72F19A3D4182776FCA3E2DB19EF85C6DDF96C8FFDE90`; local status now responds `ok=true`, `boot_phase=ready`, `tps=60`.
   - Added and tested `scripts/deploy_linux_dedicated_pck.ps1`: it uploads the multiplayer PCK, synchronizes both server mod directories, backs up old nested `.pck` files, restarts the dedicated service, and waits for sanitized `STATUS_READY`.
   - Added and tested `scripts/package_friend_release.ps1`: it builds `dist/lucid-blocks-multiplayer-mvp.zip` from the current multiplayer PCK, friend install guide, Linux server docs, registry docs, and README screenshots.
-  - Latest friend-ready zip hash: `5CD649DA883E7C37A4D1AF7468094E5639EC30EC60F767F003131119456146B7`.
+  - Latest friend-ready zip hash: `FA39FE7D1519E69F6094DA33819E180321A867E2471C07F9A3A762A2F2E38B20`.
   - Friend zip endpoint scan passed: no private host address, public test port literals, or internal public-entry names are present in the packaged docs/PCK.
   - GitHub prerelease `v0.1.4-mvp` published at `https://github.com/sos-mislom/lucid-blocks-multiplayer/releases/tag/v0.1.4-mvp` with the current multiplayer PCK and friend-ready zip.
+  - README/friend zip now include a real captured screenshot from the local client (`docs/assets/screenshots/main-menu-qualia.png`) instead of using only SVG mockups. In-world screenshots still need clean local PNG files before they can be committed without screen overlays or private endpoint leaks.
   - Latest native DLL hash, currently kept disabled on Linux VPS: `90603A319475355D73A8661A5DFC948F3AAFFBBD453209CC7CD3C6E5DBA24164`.
