@@ -721,4 +721,5 @@ Good release target:
   - Friend zip endpoint scan passed: no private host address, public test port literals, or internal public-entry names are present in the packaged docs/PCK.
   - GitHub prerelease `v0.1.4-mvp` published at `https://github.com/sos-mislom/lucid-blocks-multiplayer/releases/tag/v0.1.4-mvp` with the current multiplayer PCK and friend-ready zip.
   - README/friend zip now include a real captured screenshot from the local client (`docs/assets/screenshots/main-menu-qualia.png`) instead of using only SVG mockups. In-world screenshots still need clean local PNG files before they can be committed without screen overlays or private endpoint leaks.
+  - GitHub prerelease `v0.1.5-mvp` published at `https://github.com/sos-mislom/lucid-blocks-multiplayer/releases/tag/v0.1.5-mvp` with the screenshot-enabled friend zip.
   - Latest native DLL hash, currently kept disabled on Linux VPS: `90603A319475355D73A8661A5DFC948F3AAFFBBD453209CC7CD3C6E5DBA24164`.
