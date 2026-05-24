@@ -2497,6 +2497,10 @@ func _add_qualia_card_backdrop(button: Button, entry: Dictionary, alpha: float =
     background.name = "CoopServerCardBackdrop"
     background.mouse_filter = Control.MOUSE_FILTER_IGNORE
     background.set_anchors_preset(Control.PRESET_FULL_RECT)
+    background.offset_left = 3.0
+    background.offset_top = 3.0
+    background.offset_right = -3.0
+    background.offset_bottom = -3.0
     background.texture = _make_qualia_card_background_texture(entry)
     background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
     background.stretch_mode = TextureRect.STRETCH_SCALE
