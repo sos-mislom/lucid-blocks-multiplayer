@@ -1,18 +1,39 @@
-# Lucid Blocks Multiplayer / Chat / Console Mods
+# Lucid Blocks Multiplayer
 
-Experimental mods for Lucid Blocks.
+Unofficial Lucid Blocks multiplayer mod focused on dedicated servers, named
+QUALIA server discovery, server-owned worlds, chat, and admin/builder tooling.
 
 Russian overview: [README_RU.md](README_RU.md)
 
 ![Lucid Blocks multiplayer main menu with QUALIA server entry](docs/assets/screenshots/main-menu-qualia.png)
 
-The project is being split into three packages:
+This repository is a fork/continuation of the community co-op mod. It requires a
+legal copy of Lucid Blocks and is not affiliated with the game developers.
+
+## Packages
 
 - `lucid-blocks-multiplayer.pck` - server-based multiplayer and dedicated server work.
 - `lucid-blocks-chat.pck` - standalone in-game chat UI.
 - `lucid-blocks-console.pck` - singleplayer/LAN command console work on top of chat.
 
 The current source still contains some historical overlap. See [MOD_SPLIT.md](MOD_SPLIT.md) for the split plan and release boundaries.
+
+## Current MVP
+
+The current MVP is a server-authoritative multiplayer package:
+
+- clients join from the in-game `CO-OP` server browser;
+- the dedicated host owns the world save;
+- block, item, water, fire, storage and entity actions are validated by the server;
+- server-only worlds are hidden/blocked from normal singleplayer flows;
+- status and logs expose TPS, RAM, players, packet backlog, chunk tickets and dirty journal state.
+
+Known limits:
+
+- gameplay transport is Godot ENet/UDP, not QUIC;
+- Linux/Proton dedicated hosting can still pay rendering cost because Lucid Blocks is not a native headless server;
+- multi-region chunk loading is implemented through GDScript tickets plus an optional native hook, not a full C++ `LucidBlocksWorld` rewrite yet;
+- public release packaging still needs a final license decision.
 
 ## Attribution
 
@@ -54,9 +75,62 @@ Current priorities:
 - make Linux dedicated setup reproducible;
 - document public releases without exposing private server endpoints.
 
-## Packages
+## Architecture
 
-### Multiplayer
+Full technical notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+### Network Protocols
+
+- Game session: Godot high-level multiplayer RPC over ENet/UDP.
+- Protocol identity: `lucid-blocks-coop`, version `1`, minimum compatible `1`.
+- Dedicated health/status: small UDP endpoint returning JSON.
+- Server browser registry: local JSON plus optional HTTP/HTTPS remote registry.
+- Steam lobbies: legacy invite/discovery path, not the dedicated server model.
+- QUIC: not implemented in this MVP.
+
+### Server Authority And Security
+
+The dedicated server is the source of truth for world mutation and persistence.
+Clients request actions; the server validates, applies, journals and acknowledges
+them. Debug commands are denied by default. Builder commands require server-side
+admin role validation.
+
+Client safety checks cap incoming snapshot sizes, text length, entity/drop
+counts, coordinates, damage and knockback. Client-side scene spawning is
+restricted to allowed resource prefixes. The server does not intentionally ask a
+client to execute arbitrary code.
+
+Server save sealing is an ownership guard, not DRM. It prevents accidental
+singleplayer editing of server worlds, but real server security still depends on
+host filesystem permissions and private config hygiene.
+
+### Chunk Loading And Interest Management
+
+Lucid Blocks originally streams the world around one center. The mod adds
+server-side chunk tickets:
+
+- player tickets for connected players;
+- short-lived action tickets for block, foliage, water, fire, storage, item and
+  resync work;
+- ticket priorities and TTL cleanup;
+- optional native multi-region hook when available;
+- single-center fallback when the hook is unavailable.
+
+Entity/drop snapshots are filtered by active instance and distance so small
+servers do not broadcast every object to every player. Clients keep short grace
+windows for recently seen drops/entities to avoid visual flicker while snapshots
+catch up.
+
+### Persistence
+
+Dedicated servers track dirty chunks and append authoritative cell changes to a
+chunk journal. Journal replay runs during startup before the server advertises
+ready status. Dirty chunks are flushed/compacted by dedicated autosave logic.
+
+Tracked journal state currently covers block cells, water, fire and storage
+inventories.
+
+## Multiplayer
 
 Target file:
 

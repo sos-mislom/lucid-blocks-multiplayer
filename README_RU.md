@@ -14,6 +14,28 @@
 
 Сейчас главный MVP - `lucid-blocks-multiplayer.pck`.
 
+## Как это работает
+
+Подробно: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+- Игровая сессия сейчас работает через Godot high-level multiplayer RPC поверх ENet/UDP.
+- QUIC в текущем MVP не реализован.
+- Dedicated-сервер владеет миром и применяет изменения блоков, предметов, воды, огня, хранилищ и мобов.
+- Клиент не должен напрямую менять серверный мир: он отправляет request, сервер валидирует действие, применяет его и присылает ack/resync.
+- Server browser берет список QUALIA из локального `user://lucid_blocks_server_registry.json` и/или удаленного registry/master-server.
+- Status/health endpoint отвечает JSON по UDP и показывает `players`, `tps`, `ram_mb`, `packet_backlog`, `dirty_journal_backlog`, `chunk_ticket_count`.
+- Мир грузится через player/action chunk tickets: вокруг игроков и важных действий сервер временно держит активные области.
+- Полная native-перепись `LucidBlocksWorld` под несколько центров загрузки пока остается следующим крупным этапом.
+
+## Безопасность
+
+- Debug/cheat команды выключены по умолчанию.
+- Builder-команды выполняются только сервером и только для админов.
+- Серверные сейвы помечаются как server-only, чтобы их не открывали и не меняли через singleplayer.
+- Клиент ограничивает размеры входящих snapshots, количество entities/drops, длину текста, координаты, урон и knockback.
+- Сервер не должен заставлять клиент выполнять произвольный код.
+- Секрет/печать server save - это защита от случайного локального редактирования, а не DRM.
+
 ## Установка для игрока
 
 1. Закрой Lucid Blocks.
