@@ -27,6 +27,7 @@ const SERVER_BROWSER_CARD_WIDTH: float = 300.0
 const SERVER_BROWSER_CARD_HEIGHT: float = 64.0
 const SERVER_BROWSER_TIMEOUT_MSEC: int = 8000
 const SERVER_CONNECT_TIMEOUT_MSEC: int = 12000
+const CLIENT_MENU_KICK_TIMEOUT_SEC: float = 3.0
 const SERVER_REGISTRY_CACHE_TTL_SEC: int = 15 * 60
 const SERVER_REGISTRY_HEARTBEAT_INTERVAL_SEC: float = 30.0
 const DEFAULT_PUBLIC_SERVERS: Array = []
@@ -328,6 +329,7 @@ var host_snapshot_sequence: int = 0
 var last_received_host_snapshot_sequence: int = -1
 var client_restore_in_progress: bool = false
 var client_menu_kick_pending: bool = false
+var client_menu_kick_sequence: int = 0
 var reconnect_pending: bool = false
 var reconnect_attempt_count: int = 0
 var reconnect_retry_timer: float = 0.0
@@ -4447,7 +4449,12 @@ func _restore_game_menu_quit_hook() -> void:
 
 
 func _on_game_menu_quit_requested_coop() -> void:
-    if local_quit_in_progress or client_menu_kick_pending:
+    if client_menu_kick_pending:
+        print("[lucid-blocks-coop] leave already pending; forcing main menu fallback")
+        _force_client_main_menu_kick.call_deferred("leave retry")
+        return
+    if local_quit_in_progress:
+        print("[lucid-blocks-coop] leave already in progress")
         return
     if not _has_live_peer():
         if is_instance_valid(Ref.main) and Ref.main.has_method("_on_game_menu_quit_requested"):
@@ -4682,6 +4689,7 @@ func _finish_leave_to_main_menu_state() -> void:
     client_restore_in_progress = false
     receiving_host_world = false
     client_menu_kick_pending = false
+    client_menu_kick_sequence += 1
     local_quit_in_progress = false
     if get_tree().paused:
         get_tree().paused = false
@@ -5607,7 +5615,12 @@ func disconnect_session(announce: bool = true) -> void:
 
 
 func leave_session() -> void:
-    if local_quit_in_progress or client_menu_kick_pending:
+    if client_menu_kick_pending:
+        print("[lucid-blocks-coop] leave already pending; forcing main menu fallback")
+        _force_client_main_menu_kick.call_deferred("leave retry")
+        return
+    if local_quit_in_progress:
+        print("[lucid-blocks-coop] leave already in progress")
         return
     var should_kick_to_menu: bool = reconnect_pending or client_restore_in_progress or (reconnect_overlay != null and reconnect_overlay.visible)
     reconnect_pending = false
@@ -15408,6 +15421,9 @@ func _kick_client_to_main_menu() -> void:
         client_menu_kick_pending = false
         return
 
+    client_menu_kick_sequence += 1
+    var kick_sequence: int = client_menu_kick_sequence
+    _watch_client_menu_kick_timeout.call_deferred(kick_sequence)
     _close_pause_menu_if_open()
 
     var main_menu = Ref.main.get_node_or_null("%MainMenu")
@@ -15433,6 +15449,52 @@ func _kick_client_to_main_menu() -> void:
     if is_instance_valid(Ref.trans) and Ref.trans.visible:
         await Ref.trans.close()
 
+    if main_menu != null:
+        main_menu.activate()
+        var play_button: Control = main_menu.get_node_or_null("%PlayButton") as Control
+        if play_button != null:
+            play_button.grab_focus()
+    if is_instance_valid(Ref.player):
+        Ref.player.consume_actions()
+    _finish_leave_to_main_menu_state()
+
+
+func _watch_client_menu_kick_timeout(kick_sequence: int) -> void:
+    await get_tree().create_timer(CLIENT_MENU_KICK_TIMEOUT_SEC, true).timeout
+    if kick_sequence != client_menu_kick_sequence:
+        return
+    if not client_menu_kick_pending and not local_quit_in_progress:
+        return
+    print("[lucid-blocks-coop] leave timed out; forcing main menu fallback")
+    _force_client_main_menu_kick("leave timeout")
+
+
+func _force_client_main_menu_kick(reason: String = "leave fallback") -> void:
+    if not is_instance_valid(Ref.main):
+        client_restore_in_progress = false
+        client_menu_kick_pending = false
+        local_quit_in_progress = false
+        return
+
+    print("[lucid-blocks-coop] forcing main menu after %s" % reason)
+    if not dedicated_server_enabled and multiplayer.multiplayer_peer != null:
+        disconnect_session(false)
+
+    if is_instance_valid(Ref.world):
+        Ref.world.simulate_enabled = false
+        Ref.world.load_enabled = false
+        Ref.world.debug_stall = false
+
+    var main_menu = Ref.main.get_node_or_null("%MainMenu")
+    var game_menu = Ref.main.get_node_or_null("%GameMenu")
+    if main_menu != null:
+        main_menu.open()
+    if game_menu != null:
+        game_menu.close()
+    if is_instance_valid(Ref.trans) and Ref.trans.visible and Ref.trans.has_method("close"):
+        Ref.trans.close()
+    if is_instance_valid(Ref.audio_manager):
+        Ref.audio_manager.play_song(Ref.main.main_menu_music, 100)
     if main_menu != null:
         main_menu.activate()
         var play_button: Control = main_menu.get_node_or_null("%PlayButton") as Control
