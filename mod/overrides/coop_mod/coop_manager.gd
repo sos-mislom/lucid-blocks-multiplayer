@@ -23,6 +23,7 @@ const COOP_PROTOCOL_VERSION: int = 1
 const COOP_PROTOCOL_MIN_COMPATIBLE: int = 1
 const COOP_PROTOCOL_FEATURES: Array = []
 const COOP_PROTOCOL_REQUIRED_FEATURES: Array = []
+const COOP_BUILD_TAG: String = "client-cache-hidden-leave-force-2026-05-24"
 const SERVER_BROWSER_CARD_WIDTH: float = 300.0
 const SERVER_BROWSER_CARD_HEIGHT: float = 64.0
 const SERVER_BROWSER_TIMEOUT_MSEC: int = 8000
@@ -534,12 +535,13 @@ func _ready() -> void:
     _install_steam_integration()
     call_deferred("_ensure_pause_menu_coop_ui")
     call_deferred("_ensure_main_menu_coop_ui")
+    call_deferred("_hide_local_server_only_save_registers")
 
     get_tree().get_root().child_entered_tree.connect(_on_root_child_entered)
     get_tree().get_root().child_exiting_tree.connect(_on_root_child_exiting)
     _rebuild_tracked_root_runtime_lists()
 
-    print("[lucid-blocks-coop] manager ready")
+    print("[lucid-blocks-coop] manager ready build=%s" % COOP_BUILD_TAG)
     _update_status_text()
     if dedicated_server_enabled:
         dedicated_boot_phase = "starting"
@@ -4533,6 +4535,41 @@ func _filter_server_only_save_file_menus() -> void:
         _hide_server_only_save_file_panels(node, registers)
 
 
+func _hide_local_server_only_save_registers() -> void:
+    if dedicated_server_enabled or Ref.save_file_manager == null:
+        return
+    var changed_count: int = 0
+    for save_register in Ref.save_file_manager.get_save_file_registers():
+        if save_register == null or not bool(save_register.get_data(SERVER_WORLD_ONLY_KEY, false)):
+            continue
+        if bool(save_register.get_data("deleted", false)):
+            continue
+        save_register.set_data("deleted", true, true)
+        _write_save_register_to_disk(save_register)
+        changed_count += 1
+    if changed_count > 0:
+        print("[lucid-blocks-coop] hid %s server-only local save cache entries" % changed_count)
+        _filter_server_only_save_file_menus()
+
+
+func _write_save_register_to_disk(save_register: SaveFileRegister) -> void:
+    if save_register == null or Ref.save_file_manager == null:
+        return
+    var uuid: String = str(save_register.get_data("uuid", "")).strip_edges()
+    if uuid == "":
+        return
+    var save_dir: String = "user://qualia/%s" % uuid
+    if Ref.save_file_manager.has_method("get_save_file_directory"):
+        save_dir = str(Ref.save_file_manager.get_save_file_directory(uuid))
+    DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(save_dir))
+    var file := FileAccess.open(save_dir.path_join("register.txt"), FileAccess.WRITE)
+    if file == null:
+        push_warning("[lucid-blocks-coop] could not write server-only register cache: %s" % save_dir)
+        return
+    file.store_string(var_to_str(JSON.from_native(save_register.data)))
+    file.close()
+
+
 func _is_save_file_menu_node(node: Node) -> bool:
     if node == null:
         return false
@@ -4664,6 +4701,7 @@ func _guest_save_and_quit_to_main_menu(reason: String = "Left host session") -> 
     _set_reconnect_overlay_visible(false)
 
     local_quit_in_progress = true
+    print("[lucid-blocks-coop] guest leave started")
     _set_quit_overlay_visible(true, "Uploading player state and leaving server...")
     if _has_live_peer():
         await _flush_guest_persistent_state_before_disconnect()
@@ -4673,7 +4711,7 @@ func _guest_save_and_quit_to_main_menu(reason: String = "Left host session") -> 
     status_message = reason
     _update_status_text()
     client_menu_kick_pending = true
-    await _kick_client_to_main_menu()
+    _force_client_main_menu_kick("guest leave")
 
 
 func _finish_leave_to_main_menu_state() -> void:
@@ -15148,7 +15186,7 @@ func _on_local_game_quit() -> void:
         disconnect_session(false)
         if not menu_kick_already_pending and is_instance_valid(Ref.main):
             client_menu_kick_pending = true
-            _kick_client_to_main_menu.call_deferred()
+            _force_client_main_menu_kick.call_deferred("game quit")
 
 
 func _on_server_disconnected() -> void:
@@ -15728,6 +15766,10 @@ func _load_host_world_snapshot(register_data: Dictionary, save_data: Dictionary,
     var register: SaveFileRegister = SaveFileRegister.new()
     register.is_dimensional = false
     register.data = register_data.duplicate_deep()
+    if not multiplayer.is_server():
+        register.set_data(SERVER_WORLD_ONLY_KEY, true, true)
+        register.set_data("deleted", true, true)
+        register.set_data("coop_server_note", "Client cache for a server world. Join through Co-op.", true)
 
     var save_file: SaveFile = SaveFile.new()
     save_file.data = save_data.duplicate_deep()
