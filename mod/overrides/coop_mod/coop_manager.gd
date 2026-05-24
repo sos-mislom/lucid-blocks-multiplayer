@@ -2249,7 +2249,7 @@ func _format_server_browser_detail_line(entry: Dictionary) -> String:
 		var tps_text: String = "? TPS"
 		if entry.has("tps"):
 			tps_text = "%s TPS" % int(round(float(entry.get("tps", 0.0))))
-		return "%s/%s PLAYERS  |  %s  |  %s" % [
+		return "%s/%s  |  %s  |  %s" % [
 			int(entry.get("players", 0)),
 			int(entry.get("max_players", MAX_CLIENTS)),
 			tps_text,
