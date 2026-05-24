@@ -12264,7 +12264,7 @@ func _ensure_guest_playable_position_after_restore() -> void:
         return
 
     var start_position: Vector3 = Ref.player.global_position
-    for load_attempt in range(30):
+    for load_attempt in range(120):
         _focus_client_world_loading_on_player()
         if _is_local_guest_position_loaded():
             break
@@ -12273,10 +12273,7 @@ func _ensure_guest_playable_position_after_restore() -> void:
     var loaded: bool = _is_local_guest_position_loaded()
     var safe: bool = loaded and _is_safe_respawn_position(Ref.player.global_position)
     if not safe:
-        var fallback: Vector3 = incoming_snapshot_host_position
-        if fallback == Vector3.ZERO:
-            fallback = start_position
-        var target_position: Vector3 = _find_safe_respawn_position_near(fallback, fallback + Vector3(1.5, 0.0, 0.0))
+        var target_position: Vector3 = _find_safe_respawn_position_near(start_position, start_position + Vector3(1.5, 0.0, 0.0))
         print("[lucid-blocks-coop] guest restore position not playable loaded=%s safe=%s pos=%s -> %s" % [
             str(loaded),
             str(safe),
@@ -12284,7 +12281,7 @@ func _ensure_guest_playable_position_after_restore() -> void:
             str(target_position),
         ])
         _teleport_local_player_exact(target_position)
-        for teleport_load_attempt in range(30):
+        for teleport_load_attempt in range(120):
             _focus_client_world_loading_on_player()
             if _is_local_guest_position_loaded():
                 break
