@@ -6,6 +6,8 @@ const RemotePlayerMarkerScript = preload("res://coop_mod/remote_player_marker.gd
 const CONFIG_PATH: String = "user://lucid_blocks_coop_config.json"
 const SERVER_REGISTRY_PATH: String = "user://lucid_blocks_server_registry.json"
 const SERVER_REGISTRY_CACHE_PATH: String = "user://lucid_blocks_server_registry_cache.json"
+const SERVER_REGISTRY_FILE_NAME: String = "lucid_blocks_server_registry.json"
+const PACKAGED_SERVER_REGISTRY_PATH: String = "res://coop_mod/lucid_blocks_server_registry.json"
 const DEFAULT_PORT: int = 24667
 const MAX_CLIENTS: int = 4
 const DEFAULT_DEDICATED_WORLD_TITLE: String = "Dedicated Coop"
@@ -3913,15 +3915,39 @@ func _load_local_server_browser_registry() -> void:
     if server_browser_local_registry_loaded:
         return
     server_browser_local_registry_loaded = true
-    if not FileAccess.file_exists(SERVER_REGISTRY_PATH):
-        return
 
-    var file: FileAccess = FileAccess.open(SERVER_REGISTRY_PATH, FileAccess.READ)
-    if file == null:
-        return
-    var data: Variant = JSON.parse_string(file.get_as_text())
-    if _merge_server_browser_registry_data(data):
-        print("[lucid-blocks-coop] loaded local server registry")
+    var loaded_any: bool = false
+    for registry_path in _get_server_browser_registry_paths():
+        if not FileAccess.file_exists(registry_path):
+            continue
+        var file: FileAccess = FileAccess.open(registry_path, FileAccess.READ)
+        if file == null:
+            continue
+        var data: Variant = JSON.parse_string(file.get_as_text())
+        if _merge_server_browser_registry_data(data):
+            loaded_any = true
+            print("[lucid-blocks-coop] loaded server registry: %s" % registry_path)
+    if loaded_any:
+        _refresh_main_menu_coop_status()
+
+
+func _get_server_browser_registry_paths() -> PackedStringArray:
+    var paths: PackedStringArray = PackedStringArray([
+        PACKAGED_SERVER_REGISTRY_PATH,
+        "res://%s" % SERVER_REGISTRY_FILE_NAME,
+        SERVER_REGISTRY_PATH,
+    ])
+
+    var exe_dir: String = OS.get_executable_path().get_base_dir()
+    if exe_dir != "":
+        paths.append(exe_dir.path_join(SERVER_REGISTRY_FILE_NAME))
+        paths.append(exe_dir.path_join("mods").path_join(SERVER_REGISTRY_FILE_NAME))
+
+    var user_dir: String = OS.get_user_data_dir()
+    if user_dir != "":
+        paths.append(user_dir.path_join(SERVER_REGISTRY_FILE_NAME))
+
+    return paths
 
 
 func _read_local_server_browser_registry_entries() -> Array:
