@@ -9712,7 +9712,7 @@ func _capture_local_state() -> Dictionary:
         "dedicated_server": dedicated_server_enabled,
     }
 
-    if not _can_sample_player():
+    if not _can_sample_player(false):
         return state
 
     if dedicated_server_enabled:
@@ -9979,7 +9979,7 @@ func _resolve_dimension_namespace(dimension: int, pocket_owner_key: String = "")
 
 
 func get_active_dimension_instance_key() -> String:
-    if not _can_sample_player():
+    if not _can_sample_player(false):
         return ""
     return get_dimension_instance_key(int(Ref.world.current_dimension), get_active_pocket_owner_key())
 
@@ -12143,7 +12143,7 @@ func _capture_local_persistent_state() -> Dictionary:
 
 
 func _send_persistent_state_to_host(force_send: bool = false) -> void:
-    if multiplayer.is_server() or not _has_live_peer() or not _can_sample_player():
+    if multiplayer.is_server() or not _has_live_peer() or not _can_sample_player(false):
         return
     if not force_send and not guest_persistent_ready:
         return
@@ -12165,7 +12165,7 @@ func _send_persistent_state_to_host(force_send: bool = false) -> void:
 
 
 func _send_local_authoritative_entities_to_host(force_send: bool = false) -> void:
-    if multiplayer.is_server() or not _has_live_peer() or not _can_sample_player():
+    if multiplayer.is_server() or not _has_live_peer() or not _can_sample_player(false):
         return
     var has_live_guest_entity_authority: bool = _has_local_guest_entity_authority()
     if not force_send:
@@ -12337,7 +12337,7 @@ func _force_local_guest_gameplay_unlock(reason: String = "") -> void:
 func _recapture_mouse_for_guest_gameplay(reason: String = "") -> void:
     if multiplayer.is_server() or not _has_live_peer() or not guest_persistent_ready:
         return
-    if not is_instance_valid(Ref.main) or not Ref.main.loaded:
+    if not is_instance_valid(Ref.main) or not is_instance_valid(Ref.player):
         return
     MouseHandler.capture()
     print("[lucid-blocks-coop] guest gameplay unlocked reason=%s disabled=%s movement=%s captured=%s full=%s" % [
@@ -12363,7 +12363,7 @@ func _focus_client_world_loading_on_player() -> void:
 func _ensure_guest_playable_position_after_restore() -> void:
     if multiplayer.is_server() or not _has_live_peer():
         return
-    if not is_instance_valid(Ref.main) or not Ref.main.loaded or not is_instance_valid(Ref.world) or not is_instance_valid(Ref.player):
+    if not _can_sample_player(false):
         return
 
     var start_position: Vector3 = Ref.player.global_position
@@ -12404,14 +12404,14 @@ func _watch_guest_character_restore_timeout() -> void:
         return
     if not client_restore_in_progress or guest_persistent_ready or receiving_host_world:
         return
-    if not _can_sample_player():
+    if not _can_sample_player(false):
         return
     print("[lucid-blocks-coop] guest persistent state timed out; enabling snapshot player")
     _finish_guest_character_restore()
 
 
 func _apply_received_guest_state(save_data: Dictionary) -> bool:
-    if save_data.is_empty() or not _can_sample_player():
+    if save_data.is_empty() or not _can_sample_player(false):
         return false
 
     _clear_local_downed_state()
@@ -12433,13 +12433,13 @@ func _restore_received_guest_state_when_ready(save_data: Dictionary, initialize_
         return
 
     for restore_wait_frame in range(180):
-        if _can_sample_player():
+        if _can_sample_player(false):
             break
         await get_tree().process_frame
 
     if guest_persistent_ready:
         return
-    if not _can_sample_player():
+    if not _can_sample_player(false):
         print("[lucid-blocks-coop] guest persistent state fallback: world not ready after wait")
         _finish_guest_character_restore()
         return
@@ -12454,7 +12454,7 @@ func _restore_received_guest_state_when_ready(save_data: Dictionary, initialize_
 
 
 func _initialize_new_guest_profile() -> void:
-    if not _can_sample_player():
+    if not _can_sample_player(false):
         return
 
     _clear_local_downed_state()
@@ -13116,8 +13116,12 @@ func play_local_damage_feedback(damage: int) -> void:
         harm_cover._on_damage_taken(maxi(1, damage))
 
 
-func _can_sample_player() -> bool:
-    return is_instance_valid(Ref.main) and is_instance_valid(Ref.world) and is_instance_valid(Ref.player) and Ref.main.loaded and Ref.world.load_enabled
+func _can_sample_player(require_main_loaded: bool = true) -> bool:
+    if not is_instance_valid(Ref.main) or not is_instance_valid(Ref.world) or not is_instance_valid(Ref.player):
+        return false
+    if not Ref.world.load_enabled:
+        return false
+    return bool(Ref.main.loaded) if require_main_loaded else true
 
 
 func _get_rotation_pivot() -> Node3D:
@@ -16022,6 +16026,9 @@ func _load_host_world_snapshot(register_data: Dictionary, save_data: Dictionary,
     Ref.save_file_manager.load_file(register, false)
 
     await Ref.main.enter_game()
+    if is_instance_valid(Ref.main) and not bool(Ref.main.loaded):
+        print("[lucid-blocks-coop] Host world enter_game finished with main.loaded=false; forcing loaded state for network session")
+        Ref.main.loaded = true
     print("[lucid-blocks-coop] Host world enter_game finished")
     client_world_sync_ready = false
     guest_persistent_ready = false
@@ -16234,7 +16241,7 @@ func _handle_client_player_death() -> void:
 
 
 func _prepare_client_world_sync() -> void:
-    if multiplayer.is_server() or not is_instance_valid(Ref.main) or not Ref.main.loaded:
+    if multiplayer.is_server() or not _can_sample_player(false):
         return
     if client_world_sync_ready:
         return
