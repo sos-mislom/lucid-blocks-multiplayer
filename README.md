@@ -30,12 +30,11 @@ The current MVP is a server-authoritative multiplayer package:
 - server-only worlds are hidden/blocked from normal singleplayer flows;
 - status and logs expose TPS, RAM, players, packet backlog, chunk tickets and dirty journal state.
 
-Known limits:
+Operational notes:
 
-- gameplay transport is Godot ENet/UDP, not QUIC;
+- gameplay transport is Godot ENet/UDP;
 - Linux/Proton dedicated hosting can still pay rendering cost because Lucid Blocks is not a native headless server;
-- multi-region chunk loading is implemented through GDScript tickets plus an optional native hook, not a full C++ `LucidBlocksWorld` rewrite yet;
-- public release packaging still needs a final license decision.
+- multi-region chunk loading uses GDScript tickets plus an optional native hook.
 
 ## Attribution
 
@@ -65,7 +64,7 @@ Console/debug pack screenshots:
 
 ## Status
 
-This is an experimental MVP, not a polished public release yet.
+This is an experimental MVP.
 
 Current priorities:
 
@@ -88,7 +87,6 @@ Full technical notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - Dedicated health/status: small UDP endpoint returning JSON.
 - Server browser registry: local JSON plus optional HTTP/HTTPS remote registry.
 - Steam lobbies: legacy invite/discovery path, not the dedicated server model.
-- QUIC: not implemented in this MVP.
 
 ### Server Authority And Security
 
@@ -288,6 +286,7 @@ assets in public packages unless their rights are cleared.
 
 ## License / Assets
 
-License is still TODO.
-
-Do not ship assets with unclear rights in the main public package. The default blocky avatar has attribution in `avatar_assets/rigged_default/ATTRIBUTION.md`; other test/fan avatars should move to optional forks/addon packs before public release.
+Do not ship assets with unclear rights in the main public package. The default
+blocky avatar has attribution in
+`avatar_assets/rigged_default/ATTRIBUTION.md`; other test/fan avatars should
+move to optional forks/addon packs before public release.

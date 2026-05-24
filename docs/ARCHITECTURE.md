@@ -15,10 +15,9 @@ multiplayer flow:
 - server worlds are marked as server-only so players do not open and edit them
   through singleplayer by accident.
 
-This is still a Godot mod layered over the existing game. It is not a clean
-native rewrite of Lucid Blocks networking or world streaming. The native
-multi-region C++ rewrite remains future work; the current repository keeps the
-implemented hook/fallback path rather than a long source-level patch draft.
+This is a Godot mod layered over the existing game. The repository keeps the
+implemented multiplayer hooks, server authority, chunk tickets and persistence
+path in the mod layer.
 
 ## Network Transports
 
@@ -68,12 +67,6 @@ a small master registry service in `scripts/linux/lucid_blocks_master_server.py`
 
 Player-facing UI shows server names, world names, status, players and TPS. Raw
 addresses and ports are not shown on cards or in public docs.
-
-### QUIC
-
-QUIC is not implemented in the current MVP. The active gameplay transport is
-ENet/UDP. Moving to QUIC would require a separate transport layer or native
-extension and a migration plan for RPC serialization, status, and NAT behavior.
 
 ## Server Authority
 
@@ -131,10 +124,8 @@ The current MVP uses a layered approach:
 - if the native hook is unavailable, the server falls back to the best single
   load focus to preserve compatibility.
 
-This keeps far-apart players and delayed block actions more playable, but it is
-not the full native `LucidBlocksWorld` rewrite. The deeper future work is to
-replace the single `center_chunk` model with a real union of active region
-centers inside the C++ loader.
+This keeps far-apart players and delayed block actions more playable while
+preserving compatibility with the current game build.
 
 ## Interest Management
 
@@ -185,12 +176,8 @@ Admins should watch:
 
 See [SERVER_LOGS.md](SERVER_LOGS.md) for commands and warning signs.
 
-## Known Limits
+## Operational Limits
 
-- Gameplay transport is ENet/UDP, not QUIC.
+- Gameplay transport is ENet/UDP.
 - Linux/Proton dedicated hosting can still pay rendering cost because the game
   was not built as a true headless server.
-- Native multi-region loading is a hook/fallback layer, not the final C++ loader
-  rewrite.
-- Public release packaging still needs a license decision and cleanup of any
-  assets whose rights are unclear.
