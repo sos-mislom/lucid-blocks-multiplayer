@@ -12209,6 +12209,7 @@ func _finish_guest_character_restore() -> void:
         status_message = "Joined host world"
         _update_status_text()
         _force_local_guest_gameplay_unlock("persistent_restore")
+        _ensure_guest_playable_position_after_restore.call_deferred()
     _send_persistent_state_to_host(true)
 
 
@@ -12217,6 +12218,7 @@ func _force_local_guest_gameplay_unlock(reason: String = "") -> void:
         return
     if get_tree() != null:
         get_tree().paused = false
+    _close_pause_menu_if_open()
     if is_instance_valid(Ref.player):
         Ref.player.dead = false
         Ref.player.disabled = false
@@ -12241,6 +12243,58 @@ func _recapture_mouse_for_guest_gameplay(reason: String = "") -> void:
         str(Ref.player.movement_enabled if is_instance_valid(Ref.player) else false),
         str(MouseHandler.captured),
         str(MouseHandler.fully_captured),
+    ])
+
+
+func _is_local_guest_position_loaded() -> bool:
+    return is_instance_valid(Ref.world) and is_instance_valid(Ref.player) and Ref.world.is_position_loaded(Ref.player.global_position)
+
+
+func _focus_client_world_loading_on_player() -> void:
+    if not is_instance_valid(Ref.world) or not is_instance_valid(Ref.player):
+        return
+    if Ref.world.has_method("set_loaded_region_center"):
+        Ref.world.set_loaded_region_center(Ref.player.global_position)
+
+
+func _ensure_guest_playable_position_after_restore() -> void:
+    if multiplayer.is_server() or not _has_live_peer():
+        return
+    if not is_instance_valid(Ref.main) or not Ref.main.loaded or not is_instance_valid(Ref.world) or not is_instance_valid(Ref.player):
+        return
+
+    var start_position: Vector3 = Ref.player.global_position
+    for load_attempt in range(30):
+        _focus_client_world_loading_on_player()
+        if _is_local_guest_position_loaded():
+            break
+        await get_tree().physics_frame
+
+    var loaded: bool = _is_local_guest_position_loaded()
+    var safe: bool = loaded and _is_safe_respawn_position(Ref.player.global_position)
+    if not safe:
+        var fallback: Vector3 = incoming_snapshot_host_position
+        if fallback == Vector3.ZERO:
+            fallback = start_position
+        var target_position: Vector3 = _find_safe_respawn_position_near(fallback, fallback + Vector3(1.5, 0.0, 0.0))
+        print("[lucid-blocks-coop] guest restore position not playable loaded=%s safe=%s pos=%s -> %s" % [
+            str(loaded),
+            str(safe),
+            str(Ref.player.global_position),
+            str(target_position),
+        ])
+        _teleport_local_player_exact(target_position)
+        for teleport_load_attempt in range(30):
+            _focus_client_world_loading_on_player()
+            if _is_local_guest_position_loaded():
+                break
+            await get_tree().physics_frame
+
+    _force_local_guest_gameplay_unlock("post_restore_position")
+    print("[lucid-blocks-coop] guest playable check loaded=%s safe=%s pos=%s" % [
+        str(_is_local_guest_position_loaded()),
+        str(_is_safe_respawn_position(Ref.player.global_position) if _is_local_guest_position_loaded() else false),
+        str(Ref.player.global_position),
     ])
 
 
