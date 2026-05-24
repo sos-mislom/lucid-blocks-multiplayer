@@ -128,6 +128,7 @@ const CLIENT_DROP_VELOCITY_BLEND: float = 0.7
 const CLIENT_PREDICTED_DROP_MATCH_DISTANCE: float = 2.5
 const CLIENT_PREDICTED_DROP_LIFETIME: float = 1.5
 const CLIENT_PENDING_PICKUP_LIFETIME: float = 4.0
+const CLIENT_PENDING_ACTION_PERSIST_TIMEOUT_SEC: float = 2.0
 const CLIENT_AUTO_PICKUP_RADIUS: float = 2.35
 const CLIENT_PREDICTED_DROP_SYNC_GRACE_MS: int = 350
 const CLIENT_DIRECT_DROP_SYNC_GRACE_MS: int = 900
@@ -383,6 +384,7 @@ var tracked_root_drops: Array = []
 var animation_tree_parameter_cache: Dictionary = {}
 var pending_pickup_receipts: Array = []
 var client_collected_drop_uuids: Dictionary = {}
+var mock_player_key_warning_logged: bool = false
 var reconnect_restore_capture_on_close: bool = false
 var entity_interp_map: Dictionary = {}
 var host_entity_last_sent: Dictionary = {}
@@ -1738,6 +1740,8 @@ func _prepare_session_start_state(is_host: bool) -> void:
 
 
 func _get_local_steam_id() -> int:
+    if dedicated_server_enabled:
+        return 0
     if Steamworks != null and int(Steamworks.steam_id) > 0:
         return int(Steamworks.steam_id)
     var steam_id_value: Variant = _steam_call_alias(["getSteamID", "get_steam_id"])
@@ -4495,6 +4499,7 @@ func _flush_guest_persistent_state_before_disconnect() -> void:
     if multiplayer.is_server() or not _has_live_peer() or not guest_persistent_ready:
         return
 
+    await _await_or_rollback_pending_client_authoritative_actions("leave")
     _send_persistent_state_to_host(true)
     _send_local_authoritative_entities_to_host(true)
     multiplayer.poll()
@@ -8711,6 +8716,11 @@ func sync_local_block_place(block_position: Vector3i, block_id: int, inventory, 
     inventory.change_amount(inventory_index, -1)
     _apply_network_place(block_position, block_id)
     _remember_client_block_action(request_id, "place", block_position, block_id, inventory, inventory_index, inventory_snapshot)
+    print("[lucid-blocks-coop] Client block_action send action=place request=%s pos=%s block=%s" % [
+        request_id,
+        block_position,
+        block_id,
+    ])
     request_place_block.rpc_id(
         1,
         get_active_dimension_instance_key(),
@@ -9158,6 +9168,42 @@ func _cleanup_client_prediction_state() -> void:
             child.remove_meta("coop_predicted_direct_damage_until_ms")
             if _object_has_property(child, "direct_damage_cooldown"):
                 child.set("direct_damage_cooldown", false)
+
+
+func _has_pending_client_authoritative_actions() -> bool:
+    return not client_pending_block_actions.is_empty() or not client_pending_item_actions.is_empty()
+
+
+func _rollback_pending_client_authoritative_actions(reason: String = "persist") -> void:
+    if multiplayer.is_server():
+        return
+    for request_id in client_pending_block_actions.keys().duplicate():
+        var pending_action: Dictionary = client_pending_block_actions.get(request_id, {})
+        print("[lucid-blocks-coop] Block action %s unresolved before %s; rolling back before persistent save." % [request_id, reason])
+        _rollback_client_block_action(
+            int(request_id),
+            str(pending_action.get("action", "")),
+            pending_action.get("position", Vector3i.ZERO),
+            int(pending_action.get("block_id", 0))
+        )
+    for request_id in client_pending_item_actions.keys().duplicate():
+        var pending_item_action: Dictionary = client_pending_item_actions.get(request_id, {})
+        print("[lucid-blocks-coop] Item action %s unresolved before %s; rolling back before persistent save." % [request_id, reason])
+        _rollback_client_item_action(
+            int(request_id),
+            str(pending_item_action.get("action", "")),
+            str(pending_item_action.get("item_uuid", ""))
+        )
+
+
+func _await_or_rollback_pending_client_authoritative_actions(reason: String = "persist", timeout_sec: float = CLIENT_PENDING_ACTION_PERSIST_TIMEOUT_SEC) -> void:
+    if multiplayer.is_server() or not _has_pending_client_authoritative_actions():
+        return
+    var deadline_msec: int = Time.get_ticks_msec() + int(maxf(timeout_sec, 0.0) * 1000.0)
+    while _has_pending_client_authoritative_actions() and Time.get_ticks_msec() < deadline_msec:
+        await get_tree().process_frame
+    if _has_pending_client_authoritative_actions():
+        _rollback_pending_client_authoritative_actions(reason)
 
 
 func _queue_pending_pickup_receipt(item_state) -> void:
@@ -9719,7 +9765,9 @@ func _get_local_player_key() -> String:
         return "%s__%s" % [steam_key, suffix] if suffix != "" else steam_key
 
     var mock_key: String = "mock_%s" % _get_or_create_mock_player_id()
-    print("[lucid-blocks-coop] Steam id unavailable, using mock player key %s" % mock_key)
+    if not mock_player_key_warning_logged:
+        mock_player_key_warning_logged = true
+        print("[lucid-blocks-coop] Steam id unavailable, using mock player key %s" % mock_key)
     return "%s__%s" % [mock_key, suffix] if suffix != "" else mock_key
 
 
@@ -11158,6 +11206,7 @@ func receive_block_action_result(request_id: int, action: String, success: bool,
     if not _is_safe_vector3i(block_position) or not _is_safe_block_id(block_id):
         return
     if success:
+        print("[lucid-blocks-coop] Client block_action ack action=%s request=%s pos=%s" % [action, request_id, block_position])
         if action == "place" and dimension_instance_key == get_active_dimension_instance_key():
             _apply_network_place(block_position, block_id)
         elif (action == "break" or action == "foliage") and dimension_instance_key == get_active_dimension_instance_key():
@@ -12049,6 +12098,10 @@ func _send_persistent_state_to_host(force_send: bool = false) -> void:
         return
     if not force_send and not guest_persistent_ready:
         return
+    if _has_pending_client_authoritative_actions():
+        if not force_send:
+            return
+        _rollback_pending_client_authoritative_actions("forced_persist")
 
     var state: Dictionary = _capture_local_persistent_state()
     if state.is_empty():
@@ -12314,18 +12367,10 @@ func _apply_received_guest_state(save_data: Dictionary) -> void:
     _clear_local_downed_state()
     var temp_file := SaveFile.new()
     temp_file.data = save_data.duplicate_deep()
-    if client_restore_in_progress and incoming_snapshot_follow_host_position and not multiplayer.is_server() and is_instance_valid(Ref.world):
-        var dimension_namespace: String = str(SaveFile.DIMENSION_MAP.get(Ref.world.current_dimension, ""))
-        if dimension_namespace != "":
-            # Keep the freshly synced spawn point instead of restoring stale or missing per-dimension motion data.
-            SaveFile._set_data(temp_file.data, "%s/node/player/global_position" % dimension_namespace, Ref.player.global_position)
-            SaveFile._set_data(temp_file.data, "%s/node/player/in_air" % dimension_namespace, Ref.player.in_air)
-            SaveFile._set_data(temp_file.data, "%s/node/player/movement_velocity" % dimension_namespace, Ref.player.movement_velocity)
-            SaveFile._set_data(temp_file.data, "%s/node/player/gravity_velocity" % dimension_namespace, Ref.player.gravity_velocity)
-            SaveFile._set_data(temp_file.data, "%s/node/player/knockback_velocity" % dimension_namespace, Ref.player.knockback_velocity)
-            SaveFile._set_data(temp_file.data, "%s/node/player/rope_velocity" % dimension_namespace, Ref.player.rope_velocity)
-            SaveFile._set_data(temp_file.data, "%s/node/player/rotation_pivot" % dimension_namespace, Ref.player.get_node("%RotationPivot").rotation.y)
+    print("[lucid-blocks-coop] applying guest persistent state bytes=%s" % JSON.stringify(save_data).length())
     Ref.player.load_file(temp_file)
+    print("[lucid-blocks-coop] guest persistent state applied pos=%s" % str(Ref.player.global_position))
+    _focus_client_world_loading_on_player()
     Ref.player.dead = false
     Ref.player.disabled = false
     Ref.player.make_invincible_temporary()
