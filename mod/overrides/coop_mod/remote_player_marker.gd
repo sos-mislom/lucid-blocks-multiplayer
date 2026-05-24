@@ -357,21 +357,9 @@ func _scale_avatar_to_player_height() -> void:
 
     if model_height < 0.1 and avatar_skeleton != null:
         # Mesh AABB is microscopic - use skeleton measurement instead
-        var head_idx: int = avatar_skeleton.find_bone("mixamorig_Head")
-        if head_idx == -1:
-            head_idx = avatar_skeleton.find_bone("Head")
-        if head_idx == -1:
-            head_idx = avatar_skeleton.find_bone("head")
-        var lfoot_idx: int = avatar_skeleton.find_bone("mixamorig_LeftFoot")
-        if lfoot_idx == -1:
-            lfoot_idx = avatar_skeleton.find_bone("LeftFoot")
-        if lfoot_idx == -1:
-            lfoot_idx = avatar_skeleton.find_bone("foot.L")
-        var rfoot_idx: int = avatar_skeleton.find_bone("mixamorig_RightFoot")
-        if rfoot_idx == -1:
-            rfoot_idx = avatar_skeleton.find_bone("RightFoot")
-        if rfoot_idx == -1:
-            rfoot_idx = avatar_skeleton.find_bone("foot.R")
+        var head_idx: int = _find_avatar_bone(["mixamorig_Head", "Head", "head"])
+        var lfoot_idx: int = _find_avatar_bone(["mixamorig_LeftFoot", "LeftFoot", "foot.L"])
+        var rfoot_idx: int = _find_avatar_bone(["mixamorig_RightFoot", "RightFoot", "foot.R"])
 
         if head_idx != -1 and lfoot_idx != -1 and rfoot_idx != -1:
             var head_pos: Vector3 = avatar_skeleton.get_bone_global_rest(head_idx).origin
@@ -556,14 +544,37 @@ func _build_bone_name_map() -> Dictionary:
         return result
     for mixamo_name in MIXAMO_BONE_ALIASES.keys():
         var candidates: Array = MIXAMO_BONE_ALIASES[mixamo_name]
-        for candidate in candidates:
-            if avatar_skeleton.find_bone(str(candidate)) != -1:
-                result[mixamo_name] = str(candidate)
-                break
+        var bone_name: String = _find_avatar_bone_name(candidates)
+        if bone_name != "":
+            result[mixamo_name] = bone_name
     print("[avatar] bone_map: %d/%d mapped" % [result.size(), MIXAMO_BONE_ALIASES.size()])
     for key in ["mixamorig_Hips", "mixamorig_Head", "mixamorig_LeftArm", "mixamorig_RightArm", "mixamorig_LeftFoot"]:
         print("[avatar]   %s -> %s" % [key, result.get(key, "MISSING")])
     return result
+
+
+func _find_avatar_bone(candidates: Array) -> int:
+    var bone_name: String = _find_avatar_bone_name(candidates)
+    if bone_name == "" or avatar_skeleton == null:
+        return -1
+    return avatar_skeleton.find_bone(bone_name)
+
+
+func _find_avatar_bone_name(candidates: Array) -> String:
+    if avatar_skeleton == null:
+        return ""
+    for candidate_value in candidates:
+        var candidate: String = str(candidate_value)
+        var exact_index: int = avatar_skeleton.find_bone(candidate)
+        if exact_index != -1:
+            return avatar_skeleton.get_bone_name(exact_index)
+    for candidate_value in candidates:
+        var candidate: String = str(candidate_value)
+        for bone_index in range(avatar_skeleton.get_bone_count()):
+            var bone_name: String = avatar_skeleton.get_bone_name(bone_index)
+            if bone_name.begins_with("%s_" % candidate):
+                return bone_name
+    return ""
 
 
 func _retarget_clip_tracks(clip: Animation, bone_map: Dictionary, skeleton_path: String) -> void:
