@@ -3790,8 +3790,9 @@ func _open_main_menu_coop_panel() -> void:
     _set_main_menu_coop_tab("servers")
 
 
-func _close_main_menu_coop_panel() -> void:
-    _apply_ui_to_config()
+func _close_main_menu_coop_panel(apply_ui_config: bool = true) -> void:
+    if apply_ui_config:
+        _apply_ui_to_config()
     if is_instance_valid(main_menu_coop_panel):
         main_menu_coop_panel.visible = false
     get_viewport().gui_release_focus()
@@ -4369,23 +4370,29 @@ func _join_main_menu_server_entry(entry: Dictionary) -> void:
         _refresh_main_menu_coop_status()
         return
 
-    config["address"] = str(entry.get("address", "127.0.0.1"))
-    config["port"] = int(entry.get("port", DEFAULT_PORT))
-    if str(config["address"]).strip_edges() == "":
+    var selected_address: String = str(entry.get("address", "127.0.0.1")).strip_edges()
+    var selected_port: int = int(entry.get("port", DEFAULT_PORT))
+    if selected_address == "":
         status_message = "Server address is missing"
         _update_status_text()
         _refresh_main_menu_coop_status()
         return
+    selected_port = clampi(selected_port, 1, 65535)
+    config["address"] = selected_address
+    config["port"] = selected_port
     _save_config()
     _sync_inputs_from_config()
-    status_message = "Joining %s" % str(entry.get("name", config["address"]))
+    status_message = "Joining %s" % str(entry.get("name", selected_address))
     print("[lucid-blocks-coop] selected browser server name=%s port=%s status_port=%s status=%s" % [
         str(entry.get("name", "Server")),
-        int(entry.get("port", DEFAULT_PORT)),
+        selected_port,
         int(entry.get("status_port", DEFAULT_PORT + DEFAULT_STATUS_PORT_OFFSET)),
         str(entry.get("status", "unknown")),
     ])
-    _close_main_menu_coop_panel()
+    _close_main_menu_coop_panel(false)
+    config["address"] = selected_address
+    config["port"] = selected_port
+    _save_config()
     join_session(false)
 
 
