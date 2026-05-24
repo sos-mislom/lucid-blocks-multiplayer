@@ -29,6 +29,7 @@ const SERVER_BROWSER_CARD_HEIGHT: float = 64.0
 const SERVER_BROWSER_TIMEOUT_MSEC: int = 8000
 const SERVER_CONNECT_TIMEOUT_MSEC: int = 12000
 const CLIENT_MENU_KICK_TIMEOUT_SEC: float = 3.0
+const CLIENT_GUEST_RESTORE_TIMEOUT_SEC: float = 2.0
 const SERVER_REGISTRY_CACHE_TTL_SEC: int = 15 * 60
 const SERVER_REGISTRY_HEARTBEAT_INTERVAL_SEC: float = 30.0
 const DEFAULT_PUBLIC_SERVERS: Array = []
@@ -12179,6 +12180,10 @@ func _finish_guest_character_restore() -> void:
     remote_host_respawning = false
     client_restore_in_progress = false
     guest_persistent_ready = true
+    if is_instance_valid(Ref.player):
+        Ref.player.dead = false
+        Ref.player.disabled = false
+        Ref.player.make_invincible_temporary()
     _set_death_overlay_visible(false)
     if not multiplayer.is_server():
         reconnect_pending = false
@@ -12189,6 +12194,18 @@ func _finish_guest_character_restore() -> void:
         status_message = "Joined host world"
         _update_status_text()
     _send_persistent_state_to_host(true)
+
+
+func _watch_guest_character_restore_timeout() -> void:
+    await get_tree().create_timer(CLIENT_GUEST_RESTORE_TIMEOUT_SEC, false).timeout
+    if multiplayer.is_server() or not _has_live_peer():
+        return
+    if not client_restore_in_progress or guest_persistent_ready or receiving_host_world:
+        return
+    if not _can_sample_player():
+        return
+    print("[lucid-blocks-coop] guest persistent state timed out; enabling snapshot player")
+    _finish_guest_character_restore()
 
 
 func _apply_received_guest_state(save_data: Dictionary) -> void:
@@ -15794,6 +15811,7 @@ func _load_host_world_snapshot(register_data: Dictionary, save_data: Dictionary,
         status_message = "Restoring character"
         _update_status_text()
         request_guest_persistent_state.rpc_id(1, _get_local_player_key(), _get_local_player_name())
+        _watch_guest_character_restore_timeout.call_deferred()
 
     receiving_host_world = false
     print("[lucid-blocks-coop] Host world ready, requesting persistent character")
@@ -19026,6 +19044,7 @@ func request_guest_persistent_state(player_key: String, player_name: String) -> 
     var guest_data: Dictionary = _get_guest_persistent_state(player_key)
     if guest_data.is_empty():
         Ref.save_file_manager.loaded_file.set_data("coop/players/%s/name" % player_key, player_name, true)
+    print("[lucid-blocks-coop] sending guest persistent state to peer %s empty=%s" % [sender_id, str(guest_data.is_empty())])
     receive_guest_persistent_state.rpc_id(sender_id, guest_data)
 
 
@@ -19034,6 +19053,7 @@ func receive_guest_persistent_state(save_data: Dictionary) -> void:
     if multiplayer.is_server():
         return
     _mark_host_contact()
+    print("[lucid-blocks-coop] received guest persistent state empty=%s" % str(save_data.is_empty()))
     if save_data.is_empty():
         _initialize_new_guest_profile()
     else:
