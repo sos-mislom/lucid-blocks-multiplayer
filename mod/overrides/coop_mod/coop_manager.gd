@@ -12310,6 +12310,7 @@ func _finish_guest_character_restore() -> void:
         _set_reconnect_overlay_visible(false)
         status_message = "Joined host world"
         _update_status_text()
+        _broadcast_local_state_now()
         _force_local_guest_gameplay_unlock("persistent_restore")
         _ensure_guest_playable_position_after_restore.call_deferred()
     _send_persistent_state_to_host(true)
@@ -12425,6 +12426,31 @@ func _apply_received_guest_state(save_data: Dictionary) -> bool:
     Ref.player.make_invincible_temporary()
     _finish_guest_character_restore()
     return true
+
+
+func _restore_received_guest_state_when_ready(save_data: Dictionary, initialize_new_profile: bool = false) -> void:
+    if multiplayer.is_server() or guest_persistent_ready:
+        return
+
+    for restore_wait_frame in range(180):
+        if _can_sample_player():
+            break
+        await get_tree().process_frame
+
+    if guest_persistent_ready:
+        return
+    if not _can_sample_player():
+        print("[lucid-blocks-coop] guest persistent state fallback: world not ready after wait")
+        _finish_guest_character_restore()
+        return
+
+    if initialize_new_profile:
+        _initialize_new_guest_profile()
+        return
+
+    if not _apply_received_guest_state(save_data):
+        print("[lucid-blocks-coop] guest persistent state fallback: apply unavailable after wait")
+        _finish_guest_character_restore()
 
 
 func _initialize_new_guest_profile() -> void:
@@ -19254,21 +19280,19 @@ func receive_guest_persistent_state(save_data: Dictionary) -> void:
     var approx_bytes: int = _estimate_network_value_size(save_data)
     print("[lucid-blocks-coop] received guest persistent state empty=%s approx_bytes=%s" % [str(save_data.is_empty()), approx_bytes])
     if save_data.is_empty():
-        _initialize_new_guest_profile()
+        _restore_received_guest_state_when_ready.call_deferred({}, true)
     else:
         if approx_bytes > CLIENT_SAFE_MAX_SNAPSHOT_DECOMPRESSED_BYTES:
             print("[lucid-blocks-coop] guest persistent state rejected: too large")
-            _finish_guest_character_restore()
+            _restore_received_guest_state_when_ready.call_deferred({}, true)
             return
         var sanitized: Variant = _sanitize_network_save_data(save_data)
         if sanitized is Dictionary:
             var sanitized_data: Dictionary = sanitized
-            if not _apply_received_guest_state(sanitized_data):
-                print("[lucid-blocks-coop] guest persistent state fallback: apply unavailable")
-                _finish_guest_character_restore()
+            _restore_received_guest_state_when_ready.call_deferred(sanitized_data, false)
         else:
             print("[lucid-blocks-coop] guest persistent state rejected: sanitize failed")
-            _finish_guest_character_restore()
+            _restore_received_guest_state_when_ready.call_deferred({}, true)
 
 
 @rpc("any_peer", "call_remote", "reliable")
