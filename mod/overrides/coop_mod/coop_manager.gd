@@ -4711,7 +4711,7 @@ func _guest_save_and_quit_to_main_menu(reason: String = "Left host session") -> 
     status_message = reason
     _update_status_text()
     client_menu_kick_pending = true
-    _force_client_main_menu_kick("guest leave")
+    await _force_client_main_menu_kick("guest leave")
 
 
 func _finish_leave_to_main_menu_state() -> void:
@@ -15515,13 +15515,12 @@ func _force_client_main_menu_kick(reason: String = "leave fallback") -> void:
         return
 
     print("[lucid-blocks-coop] forcing main menu after %s" % reason)
+    var had_loaded_world: bool = is_instance_valid(Ref.world) and (bool(Ref.main.loaded) or bool(Ref.world.load_enabled) or (_object_has_property(Ref.world, "started_up") and bool(Ref.world.get("started_up"))))
     if not dedicated_server_enabled and multiplayer.multiplayer_peer != null:
         disconnect_session(false)
 
-    if is_instance_valid(Ref.world):
-        Ref.world.simulate_enabled = false
-        Ref.world.load_enabled = false
-        Ref.world.debug_stall = false
+    if had_loaded_world:
+        await _quit_guest_world_without_waiting_for_chunks()
 
     var main_menu = Ref.main.get_node_or_null("%MainMenu")
     var game_menu = Ref.main.get_node_or_null("%GameMenu")
@@ -15580,6 +15579,8 @@ func _quit_guest_world_without_waiting_for_chunks() -> void:
 
     Ref.world.clear()
     await get_tree().process_frame
+    if is_instance_valid(Ref.main) and _object_has_property(Ref.main, "loaded"):
+        Ref.main.set("loaded", false)
 
 
 func _teleport_local_player_near(target_position: Vector3) -> void:
