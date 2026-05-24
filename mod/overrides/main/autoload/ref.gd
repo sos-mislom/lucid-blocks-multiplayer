@@ -232,7 +232,10 @@ func _bootstrap_command_chat() -> void:
         command_chat_manager = get_node("LucidBlocksCommandChat")
         return
 
-    var chat_script = load("res://chat_mod/command_chat_manager.gd")
+    var chat_path: String = "res://chat_mod/command_chat_manager.gd"
+    if not ResourceLoader.exists(chat_path):
+        return
+    var chat_script = load(chat_path)
     if chat_script == null:
         return
 
@@ -246,7 +249,10 @@ func _bootstrap_console() -> void:
         console_manager = get_node("LucidBlocksConsole")
         return
 
-    var console_script = load("res://console_mod/console_manager.gd")
+    var console_path: String = "res://console_mod/console_manager.gd"
+    if not ResourceLoader.exists(console_path):
+        return
+    var console_script = load(console_path)
     if console_script == null:
         return
 

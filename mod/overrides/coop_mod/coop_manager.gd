@@ -322,6 +322,10 @@ var session_previous_instance_radius: int = -1
 var session_previous_buffer_instance_radius: int = -1
 var local_quit_in_progress: bool = false
 var guest_persistent_ready: bool = false
+var client_server_state_confirmed: bool = false
+var client_server_state_confirmed_sequence: int = -1
+var client_server_state_confirmed_instance_key: String = ""
+var server_peer_confirmed_instance_keys: Dictionary = {}
 var autosave_in_progress: bool = false
 var deferred_host_autosave_pending: bool = false
 var last_host_contact_time: int = 0
@@ -1729,6 +1733,11 @@ func _prepare_session_start_state(is_host: bool) -> void:
     clear_fake_death_override_after_shutdown = false
     _clear_local_downed_state()
     guest_persistent_ready = is_host
+    client_server_state_confirmed = is_host
+    client_server_state_confirmed_sequence = -1
+    client_server_state_confirmed_instance_key = ""
+    if is_host:
+        server_peer_confirmed_instance_keys.clear()
     last_host_contact_time = Time.get_ticks_msec() if is_host else 0
     autosave_timer = 0.0
     deferred_host_autosave_pending = false
@@ -5652,6 +5661,10 @@ func disconnect_session(announce: bool = true) -> void:
     host_recent_drop_visibility.clear()
     client_world_sync_ready = false
     guest_persistent_ready = false
+    client_server_state_confirmed = false
+    client_server_state_confirmed_sequence = -1
+    client_server_state_confirmed_instance_key = ""
+    server_peer_confirmed_instance_keys.clear()
     last_local_world_authority = true
     last_local_entity_authority = true
     client_menu_kick_pending = false
@@ -8485,7 +8498,27 @@ func _find_peer_state_by_query(query: String) -> Dictionary:
 
 
 func _is_client_gameplay_locked() -> bool:
-    return not multiplayer.is_server() and (reconnect_pending or client_restore_in_progress or receiving_host_world or not guest_persistent_ready or is_local_player_fake_dead() or is_local_player_downed())
+    return not multiplayer.is_server() and (
+        reconnect_pending
+        or client_restore_in_progress
+        or receiving_host_world
+        or not guest_persistent_ready
+        or not client_server_state_confirmed
+        or is_local_player_fake_dead()
+        or is_local_player_downed()
+    )
+
+
+func _consume_locked_client_action(action_label: String = "action") -> bool:
+    if not _is_client_gameplay_locked():
+        return false
+    if not receiving_host_world and not client_restore_in_progress and guest_persistent_ready:
+        _broadcast_local_state_now()
+    status_message = "Waiting for server"
+    _update_status_text()
+    if action_label != "":
+        print("[lucid-blocks-coop] Client %s blocked until server state is confirmed" % action_label)
+    return true
 
 
 func _next_client_block_action_id() -> int:
@@ -8739,8 +8772,8 @@ func sync_local_block_place(block_position: Vector3i, block_id: int, inventory, 
 
     if _is_local_world_authority():
         return false
-    if _is_client_gameplay_locked():
-        return false
+    if _consume_locked_client_action("block place"):
+        return true
     if not _can_reserve_client_block_place(inventory, inventory_index, block_id):
         var item_id: int = -1
         var item_count: int = 0
@@ -8790,8 +8823,8 @@ func sync_local_block_break(break_behavior, block_position: Vector3i) -> bool:
         return false
     if multiplayer.is_server():
         return false
-    if _is_client_gameplay_locked():
-        return false
+    if _consume_locked_client_action("block break"):
+        return true
 
     var broken_block = break_behavior.block
     if broken_block == null and is_instance_valid(Ref.world) and Ref.world.is_position_loaded(block_position):
@@ -8919,7 +8952,11 @@ func sync_host_direct_hit_on_remote_player(attacker: Entity, target, damage_posi
 func sync_local_attack_on_remote_player(attacker: Entity, target, damage_position: Vector3, damage: int, knockback_strength: float, fly_strength: float, fire_aspect: bool) -> bool:
     if not _has_live_peer() or multiplayer.is_server() or attacker == null or not is_instance_valid(attacker) or target == null or not is_instance_valid(target):
         return false
-    if _is_local_world_authority() or _is_client_gameplay_locked() or not is_remote_player_proxy(target):
+    if _is_local_world_authority():
+        return false
+    if _consume_locked_client_action("player attack"):
+        return true
+    if not is_remote_player_proxy(target):
         return false
 
     var target_peer_id: int = get_remote_player_proxy_peer_id(target)
@@ -8934,8 +8971,10 @@ func sync_local_attack_on_remote_player(attacker: Entity, target, damage_positio
 func sync_local_attack_on_entity(attacker: Entity, target, damage_position: Vector3, damage: int, knockback_strength: float, fly_strength: float, fire_aspect: bool) -> bool:
     if not _has_live_peer() or multiplayer.is_server() or attacker == null or not is_instance_valid(attacker) or target == null or not is_instance_valid(target):
         return false
-    if _is_local_world_authority() or _is_client_gameplay_locked():
+    if _is_local_world_authority():
         return false
+    if _consume_locked_client_action("entity attack"):
+        return true
     if not (target is Entity) or target is Player or is_remote_player_proxy(target):
         return false
 
@@ -8963,8 +9002,8 @@ func sync_local_drop_item(item_state, spawn_position: Vector3, launch_velocity: 
         return false
     if _is_local_world_authority():
         return false
-    if _is_client_gameplay_locked():
-        return false
+    if _consume_locked_client_action("item drop"):
+        return true
 
     var item_data: PackedInt32Array = _serialize_item_state(item_state)
     var request_id: int = _next_client_item_action_id()
@@ -8987,8 +9026,8 @@ func sync_local_pickup_item(dropped_item) -> bool:
         return false
     if _is_local_world_authority():
         return false
-    if _is_client_gameplay_locked():
-        return false
+    if _consume_locked_client_action("item pickup"):
+        return true
 
     if is_instance_valid(dropped_item) and not dropped_item.can_collect:
         return true
@@ -9051,8 +9090,8 @@ func play_local_host_drop_collect_animation(collector, dropped_item) -> bool:
 func sync_local_water_cells(changes: Array) -> bool:
     if not _has_live_peer() or multiplayer.is_server() or _is_local_world_authority() or changes.is_empty():
         return false
-    if _is_client_gameplay_locked():
-        return false
+    if _consume_locked_client_action("water edit"):
+        return true
     var changed_positions: Array = []
     for entry in changes:
         if entry is Array and entry.size() >= 1:
@@ -9069,8 +9108,8 @@ func sync_local_water_cells(changes: Array) -> bool:
 func sync_local_fire_cell(block_position: Vector3i, fire_level: int) -> bool:
     if not _has_live_peer() or multiplayer.is_server() or _is_local_world_authority():
         return false
-    if _is_client_gameplay_locked():
-        return false
+    if _consume_locked_client_action("fire edit"):
+        return true
     request_fire_cell.rpc_id(
         1,
         get_active_dimension_instance_key(),
@@ -9084,7 +9123,9 @@ func sync_local_fire_cell(block_position: Vector3i, fire_level: int) -> bool:
 func sync_local_ignite_entity(target) -> bool:
     if not _has_live_peer() or multiplayer.is_server() or _is_local_world_authority():
         return false
-    if _is_client_gameplay_locked() or target == null or not is_instance_valid(target):
+    if _consume_locked_client_action("ignite entity"):
+        return true
+    if target == null or not is_instance_valid(target):
         return false
     if is_remote_player_proxy(target):
         return false
@@ -9103,8 +9144,8 @@ func sync_local_ignite_entity(target) -> bool:
 func sync_local_bolt_throw(start_position: Vector3, direction: Vector3) -> bool:
     if not _has_live_peer() or multiplayer.is_server() or _is_local_world_authority():
         return false
-    if _is_client_gameplay_locked():
-        return false
+    if _consume_locked_client_action("bolt throw"):
+        return true
 
     var normalized_direction: Vector3 = direction.normalized()
     if normalized_direction.is_zero_approx():
@@ -9118,8 +9159,8 @@ func sync_local_bolt_throw(start_position: Vector3, direction: Vector3) -> bool:
 func sync_local_explosive_throw(scene_path: String, start_position: Vector3, linear_velocity: Vector3) -> bool:
     if not _has_live_peer() or multiplayer.is_server() or _is_local_world_authority():
         return false
-    if _is_client_gameplay_locked():
-        return false
+    if _consume_locked_client_action("explosive throw"):
+        return true
 
     var normalized_path: String = scene_path.strip_edges()
     if normalized_path == "":
@@ -9132,8 +9173,8 @@ func sync_local_explosive_throw(scene_path: String, start_position: Vector3, lin
 func sync_local_capsule_throw(item_id: int, start_position: Vector3, linear_velocity: Vector3) -> bool:
     if not _has_live_peer() or multiplayer.is_server() or _is_local_world_authority():
         return false
-    if _is_client_gameplay_locked():
-        return false
+    if _consume_locked_client_action("capsule throw"):
+        return true
     if item_id <= 0:
         return false
 
@@ -9144,8 +9185,8 @@ func sync_local_capsule_throw(item_id: int, start_position: Vector3, linear_velo
 func sync_local_foliage_break(block_position: Vector3i) -> bool:
     if not _has_live_peer() or multiplayer.is_server() or _is_local_world_authority():
         return false
-    if _is_client_gameplay_locked():
-        return false
+    if _consume_locked_client_action("foliage break"):
+        return true
 
     var block: Block = Ref.world.get_block_type_at(block_position)
     _apply_network_break(block_position)
@@ -12307,6 +12348,9 @@ func _finish_guest_character_restore() -> void:
         reconnect_attempt_count = 0
         reconnect_retry_timer = 0.0
         reconnect_reason = ""
+        client_server_state_confirmed = false
+        client_server_state_confirmed_sequence = -1
+        client_server_state_confirmed_instance_key = ""
         _set_reconnect_overlay_visible(false)
         status_message = "Joined host world"
         _update_status_text()
@@ -15351,6 +15395,7 @@ func _on_peer_disconnected(id: int) -> void:
         if dedicated_server_enabled:
             _flush_dedicated_dirty_chunks_before_snapshot.call_deferred("peer_disconnect")
     peer_states.erase(id)
+    server_peer_confirmed_instance_keys.erase(id)
     server_world_edit_selections.erase(id)
     _clear_host_interest_cache_for_peer(id)
     if markers.has(id):
@@ -16032,6 +16077,9 @@ func _load_host_world_snapshot(register_data: Dictionary, save_data: Dictionary,
     print("[lucid-blocks-coop] Host world enter_game finished")
     client_world_sync_ready = false
     guest_persistent_ready = false
+    client_server_state_confirmed = false
+    client_server_state_confirmed_sequence = -1
+    client_server_state_confirmed_instance_key = ""
     _install_player_death_hook()
     _prepare_client_world_sync()
     if is_instance_valid(Ref.player):
@@ -19058,6 +19106,12 @@ func submit_client_state(sequence: int, active: bool, downed: bool, dimension: i
     var sender_id: int = multiplayer.get_remote_sender_id()
     if sender_id <= 0:
         return
+    _accept_client_state(sender_id, sequence, active, downed, dimension, dimension_instance_key, pocket_owner_key, position, yaw, pitch, crouching, grounded, move_speed, under_water, held_item_id, action_state, player_name, player_key, avatar_id, skin_color, breaking, break_position, break_block_id, break_progress)
+
+
+func _accept_client_state(sender_id: int, sequence: int, active: bool, downed: bool, dimension: int, dimension_instance_key: String, pocket_owner_key: String, position: Vector3, yaw: float, pitch: float, crouching: bool, grounded: bool, move_speed: float, under_water: bool, held_item_id: int, action_state: int, player_name: String, player_key: String, avatar_id: String, skin_color: Color, breaking: bool, break_position: Vector3i, break_block_id: int, break_progress: float) -> void:
+    if sender_id <= 0:
+        return
     var existing_sequence: int = int(peer_states.get(sender_id, {}).get("sequence", -1))
     if sequence < existing_sequence:
         return
@@ -19088,13 +19142,56 @@ func submit_client_state(sequence: int, active: bool, downed: bool, dimension: i
         "break_progress": break_progress,
     }
     _refresh_markers(peer_states, multiplayer.get_unique_id())
+    _confirm_peer_state_registered_if_needed(sender_id, sequence, active, dimension_instance_key, player_key)
     if downed:
         _try_begin_double_downed_recovery()
 
 
+func _confirm_peer_state_registered_if_needed(peer_id: int, sequence: int, active: bool, dimension_instance_key: String, player_key: String) -> void:
+    if not multiplayer.is_server() or peer_id <= 0 or not active or dimension_instance_key == "":
+        return
+    var confirmation_key: String = "%s|%s" % [dimension_instance_key, player_key]
+    if str(server_peer_confirmed_instance_keys.get(peer_id, "")) == confirmation_key:
+        return
+    server_peer_confirmed_instance_keys[peer_id] = confirmation_key
+    confirm_client_state_registered.rpc_id(peer_id, sequence, dimension_instance_key)
+    if dedicated_server_enabled:
+        print("[lucid-blocks-coop] Dedicated peer_state confirmed peer=%s sequence=%s instance=%s" % [
+            peer_id,
+            sequence,
+            dimension_instance_key,
+        ])
+
+
 @rpc("any_peer", "call_remote", "reliable")
 func submit_client_state_reliable(sequence: int, active: bool, downed: bool, dimension: int, dimension_instance_key: String, pocket_owner_key: String, position: Vector3, yaw: float, pitch: float, crouching: bool, grounded: bool, move_speed: float, under_water: bool, held_item_id: int, action_state: int, player_name: String, player_key: String, avatar_id: String, skin_color: Color, breaking: bool, break_position: Vector3i, break_block_id: int, break_progress: float) -> void:
-    submit_client_state(sequence, active, downed, dimension, dimension_instance_key, pocket_owner_key, position, yaw, pitch, crouching, grounded, move_speed, under_water, held_item_id, action_state, player_name, player_key, avatar_id, skin_color, breaking, break_position, break_block_id, break_progress)
+    if not multiplayer.is_server():
+        return
+
+    var sender_id: int = multiplayer.get_remote_sender_id()
+    if sender_id <= 0:
+        return
+    _accept_client_state(sender_id, sequence, active, downed, dimension, dimension_instance_key, pocket_owner_key, position, yaw, pitch, crouching, grounded, move_speed, under_water, held_item_id, action_state, player_name, player_key, avatar_id, skin_color, breaking, break_position, break_block_id, break_progress)
+
+
+@rpc("authority", "call_remote", "reliable")
+func confirm_client_state_registered(sequence: int, dimension_instance_key: String) -> void:
+    if multiplayer.is_server():
+        return
+    if dimension_instance_key == "":
+        return
+    if sequence < client_server_state_confirmed_sequence:
+        return
+    client_server_state_confirmed = true
+    client_server_state_confirmed_sequence = sequence
+    client_server_state_confirmed_instance_key = dimension_instance_key
+    if status_message == "Waiting for server":
+        status_message = "Joined host world"
+        _update_status_text()
+    print("[lucid-blocks-coop] server confirmed client state sequence=%s instance=%s" % [
+        sequence,
+        dimension_instance_key,
+    ])
 
 
 @rpc("any_peer", "call_remote", "reliable")
