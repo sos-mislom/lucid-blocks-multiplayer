@@ -4447,6 +4447,8 @@ func _restore_game_menu_quit_hook() -> void:
 
 
 func _on_game_menu_quit_requested_coop() -> void:
+    if local_quit_in_progress or client_menu_kick_pending:
+        return
     if not _has_live_peer():
         if is_instance_valid(Ref.main) and Ref.main.has_method("_on_game_menu_quit_requested"):
             await Ref.main._on_game_menu_quit_requested()
@@ -4539,23 +4541,102 @@ func _hide_server_only_save_file_panels(save_file_menu: Node, registers: Array) 
     if container == null:
         return
 
-    var children: Array = container.get_children()
-    # Vanilla order is: "new qualia" panel, then one panel per SaveFileRegister.
-    if children.size() < registers.size() + 1:
+    var server_only_registers: Array = []
+    for save_register in registers:
+        if save_register != null and bool(save_register.get_data(SERVER_WORLD_ONLY_KEY, false)):
+            server_only_registers.append(save_register)
+    if server_only_registers.is_empty():
         return
 
-    for index in range(registers.size()):
-        var save_register = registers[index]
-        if save_register == null or not bool(save_register.get_data(SERVER_WORLD_ONLY_KEY, false)):
+    var children: Array = container.get_children()
+    for child in children:
+        if not (child is Node):
             continue
-        var panel_node: Node = children[index + 1]
-        if panel_node == null:
-            continue
-        panel_node.set_meta("coop_hidden_server_only_save", true)
-        if panel_node is CanvasItem:
-            (panel_node as CanvasItem).visible = false
-        if panel_node is Control:
-            (panel_node as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
+        var panel_node: Node = child as Node
+        for save_register in server_only_registers:
+            if _does_save_panel_match_register(panel_node, save_register):
+                _hide_server_only_save_file_panel(panel_node)
+                break
+
+    # Vanilla fallback: first child is "new qualia", then one panel per SaveFileRegister.
+    if children.size() >= registers.size() + 1:
+        for index in range(registers.size()):
+            var save_register = registers[index]
+            if save_register == null or not bool(save_register.get_data(SERVER_WORLD_ONLY_KEY, false)):
+                continue
+            var ordered_panel: Node = children[index + 1] as Node
+            if ordered_panel != null:
+                _hide_server_only_save_file_panel(ordered_panel)
+
+
+func _hide_server_only_save_file_panel(panel_node: Node) -> void:
+    if panel_node == null:
+        return
+    panel_node.set_meta("coop_hidden_server_only_save", true)
+    if panel_node is CanvasItem:
+        (panel_node as CanvasItem).visible = false
+    if panel_node is Control:
+        var control := panel_node as Control
+        control.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        control.focus_mode = Control.FOCUS_NONE
+        control.custom_minimum_size = Vector2.ZERO
+
+
+func _does_save_panel_match_register(panel_node: Node, save_register: SaveFileRegister) -> bool:
+    if panel_node == null or save_register == null:
+        return false
+    var target_uuid: String = str(save_register.get_data("uuid", "")).strip_edges()
+    var target_title: String = str(save_register.get_data("title", "")).strip_edges()
+    var panel_register: Variant = _get_save_register_from_node(panel_node)
+    if panel_register is SaveFileRegister:
+        var panel_uuid: String = str((panel_register as SaveFileRegister).get_data("uuid", "")).strip_edges()
+        if panel_uuid != "" and panel_uuid == target_uuid:
+            return true
+    if target_uuid != "" and _node_tree_has_meta_value(panel_node, "uuid", target_uuid):
+        return true
+    if target_title != "" and _node_tree_text_contains(panel_node, target_title):
+        return true
+    return false
+
+
+func _get_save_register_from_node(root: Node) -> Variant:
+    if root == null:
+        return null
+    for property_name in ["save_file_register", "file_register", "save_register", "register"]:
+        if _object_has_property(root, property_name):
+            var value: Variant = root.get(property_name)
+            if value is SaveFileRegister:
+                return value
+    for child in root.get_children():
+        if child is Node:
+            var value: Variant = _get_save_register_from_node(child as Node)
+            if value is SaveFileRegister:
+                return value
+    return null
+
+
+func _node_tree_has_meta_value(root: Node, meta_name: String, expected: String) -> bool:
+    if root == null or expected == "":
+        return false
+    if root.has_meta(meta_name) and str(root.get_meta(meta_name, "")).strip_edges() == expected:
+        return true
+    for child in root.get_children():
+        if child is Node and _node_tree_has_meta_value(child as Node, meta_name, expected):
+            return true
+    return false
+
+
+func _node_tree_text_contains(root: Node, needle: String) -> bool:
+    if root == null or needle == "":
+        return false
+    if _object_has_property(root, "text"):
+        var text: String = str(root.get("text")).strip_edges()
+        if text != "" and text.findn(needle) != -1:
+            return true
+    for child in root.get_children():
+        if child is Node and _node_tree_text_contains(child as Node, needle):
+            return true
+    return false
 
 
 func _guest_save_and_quit_to_main_menu(reason: String = "Left host session") -> void:
@@ -4586,7 +4667,6 @@ func _guest_save_and_quit_to_main_menu(reason: String = "Left host session") -> 
     _update_status_text()
     client_menu_kick_pending = true
     await _kick_client_to_main_menu()
-    _finish_leave_to_main_menu_state()
 
 
 func _finish_leave_to_main_menu_state() -> void:
@@ -5527,6 +5607,8 @@ func disconnect_session(announce: bool = true) -> void:
 
 
 func leave_session() -> void:
+    if local_quit_in_progress or client_menu_kick_pending:
+        return
     var should_kick_to_menu: bool = reconnect_pending or client_restore_in_progress or (reconnect_overlay != null and reconnect_overlay.visible)
     reconnect_pending = false
     reconnect_attempt_count = 0
