@@ -193,7 +193,6 @@ Public checklist:
 - No `deploy.txt`, `.env`, passwords, tokens, private IPs/ports or local logs.
 - Keep [CREDITS.md](CREDITS.md).
 - Do not claim the original co-op mod as original work.
-- Do not ship fan/test avatars in release archives unless rights are cleared.
 - Use real screenshots from `docs/assets/screenshots`, not mockups.
 
 ## Attribution

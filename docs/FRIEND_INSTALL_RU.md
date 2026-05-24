@@ -45,7 +45,6 @@ zzz-lucid-blocks-command-chat*.pck
 
 ![Статус подключения в консоли](assets/screenshots/console-connect-status.jpg)
 
-Публичный порт и технический адрес специально не показываются в инструкции и UI.
 
 ## Если не подключается
 

@@ -36,5 +36,3 @@ First public-facing MVP packaging pass.
 - Dedicated server still uses the game/Proton runtime and is not a true
   no-render headless server.
 - Time/weather authority and mob/drop reconciliation need more multiplayer testing.
-- Public release archives should not include fan/test avatar assets unless their
-  rights are cleared.

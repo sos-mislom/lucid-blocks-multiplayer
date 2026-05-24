@@ -35,10 +35,3 @@ Keep upstream license files and attribution files with every public release.
   - License: CC BY 4.0
   - Local attribution file:
     `mod/overrides/coop_mod/avatar_assets/rigged_default/ATTRIBUTION.md`
-
-## Assets Not Cleared for Public Core Releases
-
-Fan/test avatars or character assets such as Pim, Charlie, and Mr. Frog should
-not be shipped as part of the public core package unless their rights are cleared.
-If kept for private testing, they should be moved to a separate private addon or
-removed from public release archives.
