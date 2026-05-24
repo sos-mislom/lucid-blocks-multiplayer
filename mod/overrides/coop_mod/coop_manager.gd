@@ -8548,10 +8548,20 @@ func _get_pending_block_place_reservations(inventory, inventory_index: int, bloc
             continue
         if int(pending_action.get("inventory_index", -1)) != inventory_index:
             continue
-        if int(pending_action.get("block_id", 0)) != block_id:
-            continue
         count += 1
     return count
+
+
+func _does_inventory_item_place_block_id(item_id: int, block_id: int) -> bool:
+    if item_id == block_id:
+        return true
+    var item = ItemMap.map(item_id)
+    if item == null or not (item is Block):
+        return false
+    var block: Block = item as Block
+    if not block.directional:
+        return false
+    return block_id >= item_id + 1 and block_id <= item_id + 6
 
 
 func _can_reserve_client_block_place(inventory, inventory_index: int, block_id: int) -> bool:
@@ -8560,7 +8570,7 @@ func _can_reserve_client_block_place(inventory, inventory_index: int, block_id: 
     if inventory_index >= inventory.items.size():
         return false
     var item_state = inventory.items[inventory_index]
-    if item_state == null or int(item_state.id) != block_id:
+    if item_state == null or not _does_inventory_item_place_block_id(int(item_state.id), block_id):
         return false
     var available_count: int = int(item_state.count) - _get_pending_block_place_reservations(inventory, inventory_index, block_id)
     return available_count > 0
@@ -8707,6 +8717,20 @@ func sync_local_block_place(block_position: Vector3i, block_id: int, inventory, 
     if _is_client_gameplay_locked():
         return false
     if not _can_reserve_client_block_place(inventory, inventory_index, block_id):
+        var item_id: int = -1
+        var item_count: int = 0
+        if inventory != null and is_instance_valid(inventory) and inventory_index >= 0 and inventory_index < inventory.items.size():
+            var item_state = inventory.items[inventory_index]
+            if item_state != null:
+                item_id = int(item_state.id)
+                item_count = int(item_state.count)
+        print("[lucid-blocks-coop] Client block_action place skipped no_inventory request_pos=%s block=%s slot=%s item=%s count=%s" % [
+            block_position,
+            block_id,
+            inventory_index,
+            item_id,
+            item_count,
+        ])
         status_message = "No block available"
         _update_status_text()
         return true
