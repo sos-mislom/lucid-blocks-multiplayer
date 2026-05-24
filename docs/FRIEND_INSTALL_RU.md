@@ -1,6 +1,8 @@
 # Как дать мод другу
 
-Это MVP-сборка Lucid Blocks Multiplayer. Ставьте ее только поверх легальной Steam-версии игры и не смешивайте со старыми debug/co-op `.pck`.
+Это инструкция для установки MVP-сборки Lucid Blocks Multiplayer. Нужна
+легальная Steam-копия Lucid Blocks. Не смешивайте свежий пакет со старыми
+debug/co-op `.pck`.
 
 ## Что отправить
 
@@ -10,7 +12,7 @@
 lucid-blocks-multiplayer.pck
 ```
 
-Если отправляешь архив релиза, внутри нужен именно этот `.pck`.
+Если отправляешь release archive, внутри должен быть именно этот `.pck`.
 
 ## Установка
 
@@ -32,23 +34,29 @@ zzz-lucid-blocks-command-chat*.pck
 
 ## Подключение
 
-1. Открыть вкладку multiplayer/server browser.
-2. Выбрать сервер по имени `QUALIA`.
-3. Нажать на плашку сервера. Она должна сразу начать подключение к миру.
+1. В главном меню нажать `CO-OP`.
+2. Открыть вкладку `SERVERS`.
+3. Нажать на карточку сервера в `AVAILABLE QUALIA`.
+4. Дождаться подключения и загрузки мира.
 
-![QUALIA multiplayer entry](assets/screenshots/main-menu-qualia.png)
-![QUALIA server browser](assets/screenshots/server-browser-qualia.png)
-![Direct add server screen](assets/screenshots/add-server-direct.png)
+![Главное меню с кнопкой CO-OP](assets/screenshots/main-menu-qualia.jpg)
+
+![Список QUALIA-серверов](assets/screenshots/server-browser-qualia.jpg)
+
+![Статус подключения в консоли](assets/screenshots/console-connect-status.jpg)
 
 Публичный порт и технический адрес специально не показываются в инструкции и UI.
 
-## Если не подключает
+## Если не подключается
 
 - Проверьте, что у обоих игроков одинаковая версия Lucid Blocks.
-- Проверьте, что в `mods` лежит только свежий `lucid-blocks-multiplayer.pck`, без старых co-op/debug пакетов.
+- Проверьте, что в `mods` лежит свежий `lucid-blocks-multiplayer.pck`.
+- Удалите старые co-op/debug пакеты.
 - Перезапустите игру после замены `.pck`.
-- Если один игрок заходит, а второй нет, пришлите серверное имя, время попытки и скрин текста ошибки.
+- Если один игрок заходит, а второй нет, пришлите имя сервера, время попытки и скрин текста ошибки.
 
 ## Важно
 
-Мир сервера считается серверным миром. Не надо пытаться играть в этот же сейв локально в singleplayer и потом мерджить прогресс вручную.
+Мир сервера считается серверным миром. Не надо открывать тот же сейв локально в
+singleplayer и потом вручную мержить прогресс. Игроки заходят в серверный мир
+через `CO-OP`.

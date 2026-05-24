@@ -3,129 +3,135 @@
 Unofficial Lucid Blocks multiplayer mod focused on dedicated servers, named
 QUALIA server discovery, server-owned worlds, chat, and admin/builder tooling.
 
+Current public version: **v0.1.0-mvp**
+
 Russian overview: [README_RU.md](README_RU.md)
 
-![Lucid Blocks multiplayer main menu with QUALIA server entry](docs/assets/screenshots/main-menu-qualia.png)
+![Lucid Blocks main menu with CO-OP entry](docs/assets/screenshots/main-menu-qualia.jpg)
 
-This repository is a fork/continuation of the community co-op mod. It requires a
-legal copy of Lucid Blocks and is not affiliated with the game developers.
+This is an unofficial fork/continuation of the community co-op mod. It requires
+a legal copy of Lucid Blocks and is not affiliated with the game developers or
+publisher.
 
 ## Packages
 
-- `lucid-blocks-multiplayer.pck` - server-based multiplayer and dedicated server work.
+- `lucid-blocks-multiplayer.pck` - dedicated/server-based multiplayer.
 - `lucid-blocks-chat.pck` - standalone in-game chat UI.
-- `lucid-blocks-console.pck` - singleplayer/LAN command console work on top of chat.
+- `lucid-blocks-console.pck` - optional singleplayer/LAN command console and builder tools.
 
-The current source still contains some historical overlap: `mod/overrides` is
-the multiplayer source, `mod/chat_overrides` is the standalone chat pack, and
-`mod/console_overrides` is the standalone console/debug pack.
+The current repository keeps multiplayer, chat, and console sources in separate
+export projects under `mod/overrides`, `mod/chat_overrides`, and
+`mod/console_overrides`.
 
-## Current MVP
+## What Works In v0.1.0-mvp
 
-The current MVP is a server-authoritative multiplayer package:
+- In-game `CO-OP` entry and QUALIA-styled server browser.
+- Click a server card to connect to a dedicated world.
+- Dedicated host owns the world save.
+- Server-authoritative block, item, water, fire, storage, entity and player action requests.
+- Basic player persistence and repeat-join protection.
+- Chat and command input.
+- Remote player avatars with a safe default blocky character.
+- Server status with TPS, player count, RAM, packet backlog, dirty journal and chunk ticket metrics.
+- Server-only save protection so dedicated worlds are not meant to be edited through singleplayer.
 
-- clients join from the in-game `CO-OP` server browser;
-- the dedicated host owns the world save;
-- block, item, water, fire, storage and entity actions are validated by the server;
-- server-only worlds are hidden/blocked from normal singleplayer flows;
-- status and logs expose TPS, RAM, players, packet backlog, chunk tickets and dirty journal state.
+![QUALIA server browser](docs/assets/screenshots/server-browser-qualia.jpg)
 
-Operational notes:
+## Current Limits
 
-- gameplay transport is Godot ENet/UDP;
-- Linux/Proton dedicated hosting can still pay rendering cost because Lucid Blocks is not a native headless server;
-- multi-region chunk loading uses GDScript tickets plus an optional native hook.
+This is an experimental MVP, not a polished official multiplayer release.
 
-## Attribution
-
-This is an unofficial fork/continuation of the community co-op mod originally
-published at https://github.com/parkers0405/lucid-blocks-coop by Parker Settle /
-Mr_Settle. We do not claim authorship of the original co-op mod, Lucid Blocks, or
-bundled third-party tools/assets.
-
-Full credits and release attribution rules are in [CREDITS.md](CREDITS.md).
+- The dedicated server still runs through the game/Proton stack, so it is not a true no-render headless server.
+- Time/weather authority, entity behavior and mob/drop reconciliation still need more multiplayer testing.
+- Large public servers are not the target yet. The current tuning is for small private servers.
+- The native world loader is still fundamentally a single-center system; the mod adds player/action chunk tickets and an optional native hook as a compatibility layer.
+- Debug/fan avatar assets in the source tree are not cleared as public core-release content unless their attribution says otherwise.
 
 ## Screenshots
 
-Player-facing screenshots are kept in `docs/assets/screenshots`. Release notes
-and friend packages should use those PNGs first, not diagrams.
+![Console connection status](docs/assets/screenshots/console-connect-status.jpg)
 
-![QUALIA multiplayer entry](docs/assets/screenshots/main-menu-qualia.png)
+![Console coords and fly command](docs/assets/screenshots/console-coords-fly.jpg)
 
-![QUALIA server browser connect screen](docs/assets/screenshots/server-browser-qualia.png)
+![Two default remote avatars in world](docs/assets/screenshots/multiplayer-default-avatars.jpg)
 
-![Direct add server screen](docs/assets/screenshots/add-server-direct.png)
+![Avatar skin example](docs/assets/screenshots/avatar-skin-example.jpg)
 
-Console/debug pack screenshots:
+## Install For Players
 
-![Console help command](docs/assets/screenshots/console-help-command.png)
+1. Close Lucid Blocks.
+2. Open the game folder in Steam: `Library -> Lucid Blocks -> Manage -> Browse local files`.
+3. Create a `mods` folder if it does not exist.
+4. Remove older test co-op/multiplayer `.pck` files from that folder.
+5. Copy `dist/lucid-blocks-multiplayer.pck` into `mods`.
+6. Launch the game.
+7. Click `CO-OP`.
+8. Click a server card in `AVAILABLE QUALIA`.
 
-![Console give command](docs/assets/screenshots/console-give-command.png)
+Detailed Russian friend install guide:
+[docs/FRIEND_INSTALL_RU.md](docs/FRIEND_INSTALL_RU.md)
 
-## Status
+## Dedicated Server Docs
 
-This is an experimental MVP.
+- Russian Linux server guide: [docs/LINUX_SERVER_RU.md](docs/LINUX_SERVER_RU.md)
+- English Linux server guide: [docs/LINUX_SERVER_EN.md](docs/LINUX_SERVER_EN.md)
+- Server registry: [docs/SERVER_REGISTRY.md](docs/SERVER_REGISTRY.md)
+- Logs and health checks: [docs/SERVER_LOGS.md](docs/SERVER_LOGS.md)
 
-Current priorities:
-
-- keep singleplayer safe;
-- keep debug/cheat commands out of the public multiplayer core package unless
-  server-side admin roles explicitly allow them;
-- keep chat standalone and reusable;
-- keep the console pack standalone without the multiplayer manager;
-- make Linux dedicated setup reproducible;
-- document public releases without exposing private server endpoints.
+Do not publish private deployment files, passwords, tokens, live IPs, raw ports,
+Steam credentials, or local server logs.
 
 ## Architecture
 
-Full technical notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Full notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ### Network Protocols
 
 - Game session: Godot high-level multiplayer RPC over ENet/UDP.
-- Protocol identity: `lucid-blocks-coop`, version `1`, minimum compatible `1`.
+- Protocol identity: `lucid-blocks-coop`.
+- Protocol version: `1`.
+- Minimum compatible protocol: `1`.
 - Compatibility is based on protocol/min-compatible values and feature gates,
-  not on exact client build, PCK hash, or cosmetic UI version.
-- Dedicated health/status: small UDP endpoint returning JSON.
+  not exact PCK hashes or cosmetic client build tags.
+- Dedicated health/status: lightweight UDP JSON endpoint.
 - Server browser registry: local JSON plus optional HTTP/HTTPS remote registry.
 - Steam lobbies: legacy invite/discovery path, not the dedicated server model.
 
-You need to redeploy the VPS package when server authority, RPC payloads,
-persistence, or protocol features change. Client-only UI, screenshots, README
-changes and other cosmetic fixes should not require a dedicated server deploy.
+Redeploy the VPS package when server authority, RPC payloads, persistence, or
+required protocol features change. Client-only UI, screenshots, README changes,
+and other cosmetic edits should not require a dedicated server deploy.
 
 ### Server Authority And Security
 
 The dedicated server is the source of truth for world mutation and persistence.
-Clients request actions; the server validates, applies, journals and acknowledges
-them. Debug commands are denied by default. Builder commands require server-side
-admin role validation.
+Clients request actions; the server validates, applies, journals and
+acknowledges them.
 
-Client safety checks cap incoming snapshot sizes, text length, entity/drop
-counts, coordinates, damage and knockback. Client-side scene spawning is
-restricted to allowed resource prefixes. The server does not intentionally ask a
-client to execute arbitrary code.
+Current safety model:
 
-Server save sealing is an ownership guard, not DRM. It prevents accidental
-singleplayer editing of server worlds, but real server security still depends on
-host filesystem permissions and private config hygiene.
+- Debug/cheat commands are denied by default.
+- Builder commands require server-side admin role validation.
+- Clients do not intentionally execute arbitrary server-provided code.
+- Incoming snapshots, text, entity/drop counts, coordinates, damage and knockback are capped.
+- Client-side scene spawning is restricted to allowed resource prefixes.
+- Server-only saves are hidden/blocked from normal singleplayer flows.
+
+Server save sealing is an ownership guard, not DRM. Real server security still
+depends on filesystem permissions, host security and private config hygiene.
 
 ### Chunk Loading And Interest Management
 
-Lucid Blocks originally streams the world around one center. The mod adds
-server-side chunk tickets:
+Lucid Blocks was designed around one loaded world center. Multiplayer needs
+several active areas, so the mod adds:
 
-- player tickets for connected players;
-- short-lived action tickets for block, foliage, water, fire, storage, item and
-  resync work;
+- player tickets around connected players;
+- short-lived action tickets for block, foliage, water, fire, storage, item and resync work;
 - ticket priorities and TTL cleanup;
-- optional native multi-region hook when available;
+- optional native multi-region hook;
 - single-center fallback when the hook is unavailable.
 
-Entity/drop snapshots are filtered by active instance and distance so small
-servers do not broadcast every object to every player. Clients keep short grace
-windows for recently seen drops/entities to avoid visual flicker while snapshots
-catch up.
+Entity and drop snapshots are filtered by active instance and distance so small
+servers do not broadcast every object to every player.
 
 ### Persistence
 
@@ -136,78 +142,12 @@ ready status. Dirty chunks are flushed/compacted by dedicated autosave logic.
 Tracked journal state currently covers block cells, water, fire and storage
 inventories.
 
-## Multiplayer
+## Console Pack
 
-Target file:
+The console pack is optional and separate from the public multiplayer core.
+It provides chat-backed commands for singleplayer/LAN/admin testing.
 
-```text
-dist/lucid-blocks-multiplayer.pck
-```
-
-Includes:
-
-- multiplayer/dedicated connection flow;
-- server browser;
-- player list;
-- multiplayer integration with the chat pack;
-- safe default remote avatar;
-- server-world protection;
-- server-side admin roles for controlled builder/world-edit commands.
-
-Does not include, for release:
-
-- public access to `/give`, `/gamemode`, `/spawn`, `/time`, `/weather`, `/kill`, `/fly`;
-- questionable/fan avatar packs;
-- camera/zoom hotkeys;
-- private server endpoints in docs/UI.
-
-Admin-only multiplayer commands:
-
-- `/whoami` shows the server-side role and `player_key` for the current player.
-- Add admin keys to the dedicated server with `LB_ADMIN_KEYS="steam_...__suffix,mock_..."`
-  or launch args `--lb-admin-keys="key1,key2"`.
-- Admins can use `/wand`, `/pos1`, `/pos2`, `/sel`, `/fill`, `/clear`,
-  `/floor`, `/flat`, `/border`, `/peaceful`, `/daylock`, `/builder_setup`.
-- Builder commands are executed by the server after role validation. Clients do
-  not directly edit the authoritative world.
-
-### Chat
-
-Target file:
-
-```text
-dist/lucid-blocks-chat.pck
-```
-
-Goal:
-
-- in-game chat UI;
-- chat history;
-- input handling;
-- command-style text entry shell;
-- autocomplete UI shell.
-
-Chat should not execute cheats by itself. It should call optional multiplayer/console providers when those packs are installed.
-
-### Console
-
-Target file:
-
-```text
-dist/lucid-blocks-console.pck
-```
-
-Goal:
-
-- singleplayer commands on top of chat;
-- LAN host admin/debug commands;
-- command autocomplete provider.
-
-The console pack is now a standalone optional debug/admin pack in
-`mod/console_overrides`. It reuses the chat UI and provides its own command
-provider instead of relying on `coop_manager`.
-
-Builder/admin commands:
+Common builder commands:
 
 - `/wand`, `/pos1`, `/pos2`, `/sel`
 - `/fill <block>`, `/clear [water]`, `/floor <block> [y]`
@@ -215,15 +155,6 @@ Builder/admin commands:
 - `/border [radius_chunks] [block] [height]`
 - `/peaceful [on|off]`, `/daylock [on|off]`
 - `/builder_setup [radius_chunks] [block] [y]`
-
-`/builder_setup` prepares a spawn-building area: creative/fly, day lock,
-peaceful mode, a flat loaded chunk area, and a physical border wall.
-
-Screenshots:
-
-![Console help command](docs/assets/screenshots/console-help-command.png)
-
-![Console give command](docs/assets/screenshots/console-give-command.png)
 
 ## Build
 
@@ -246,53 +177,32 @@ Linux/macOS shell:
 GODOT_EXPORT_BIN=/path/to/Godot_v4.6-stable_linux.x86_64 ./scripts/build_release_packs.sh
 ```
 
-## Install
+## Before Making The Repository Public
 
-Copy the `.pck` file into one of the Lucid Blocks mod directories, depending on your install:
-
-```text
-SteamLibrary/steamapps/common/lucid-blocks/mods
-SteamLibrary/steamapps/common/lucid-blocks/lucid-blocks/mods
-```
-
-Do not install old mixed/debug packages together with release packages unless you are intentionally testing conflicts.
-
-Friend install guide:
-
-- Russian: [docs/FRIEND_INSTALL_RU.md](docs/FRIEND_INSTALL_RU.md)
-
-## Dedicated Server Docs
-
-- Russian: [docs/LINUX_SERVER_RU.md](docs/LINUX_SERVER_RU.md)
-- English: [docs/LINUX_SERVER_EN.md](docs/LINUX_SERVER_EN.md)
-- Server registry: [docs/SERVER_REGISTRY.md](docs/SERVER_REGISTRY.md)
-- Logs and health checks: [docs/SERVER_LOGS.md](docs/SERVER_LOGS.md)
-
-## Roadmap
-
-The public roadmap is [ROADMAP.md](ROADMAP.md).
-
-## GitHub Publishing
-
-Do not publish private deployment files, passwords, IPs, ports, Steam credentials, or server config.
-
-Generated folders such as `.godot/`, `logs/`, `backups/`, `__pycache__/`,
-native build caches, and temporary `dist/.tmp-*` files should stay out of Git.
-
-Before release, run:
+Run:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 .\scripts\check_release_hygiene.ps1
 git diff --check
+git status --short
 ```
 
-Keep attribution in [CREDITS.md](CREDITS.md) and do not ship fan/test avatar
-assets in public packages unless their rights are cleared.
+Public checklist:
 
-## License / Assets
+- No `deploy.txt`, `.env`, passwords, tokens, private IPs/ports or local logs.
+- Keep [CREDITS.md](CREDITS.md).
+- Do not claim the original co-op mod as original work.
+- Do not ship fan/test avatars in release archives unless rights are cleared.
+- Use real screenshots from `docs/assets/screenshots`, not mockups.
 
-Do not ship assets with unclear rights in the main public package. The default
-blocky avatar has attribution in
-`avatar_assets/rigged_default/ATTRIBUTION.md`; other test/fan avatars should
-move to optional forks/addon packs before public release.
+## Attribution
+
+Original community co-op mod:
+https://github.com/parkers0405/lucid-blocks-coop by Parker Settle / Mr_Settle.
+
+Full credits and asset notes are in [CREDITS.md](CREDITS.md).
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md).

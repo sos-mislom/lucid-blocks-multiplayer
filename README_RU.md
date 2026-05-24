@@ -1,39 +1,58 @@
 # Lucid Blocks Multiplayer
 
-Неофициальный форк/продолжение community co-op мода для Lucid Blocks с упором на выделенный сервер, список публичных QUALIA-серверов, чат и админские инструменты.
+Неофициальный multiplayer-мод для Lucid Blocks с упором на выделенные серверы,
+список QUALIA-серверов, серверные миры, чат и админские инструменты.
 
-Проект не является официальной частью Lucid Blocks. Для игры нужна легальная Steam-копия.
+Текущая публичная версия: **v0.1.0-mvp**
 
-![Главное меню с вкладкой CO-OP](docs/assets/screenshots/main-menu-qualia.png)
+English README: [README.md](README.md)
 
-## Что внутри
+![Главное меню Lucid Blocks с кнопкой CO-OP](docs/assets/screenshots/main-menu-qualia.jpg)
 
-- `lucid-blocks-multiplayer.pck` - основной multiplayer-пакет: серверный мир, подключение к выделенному серверу, список серверов, чат, список игроков, роли админов.
-- `lucid-blocks-chat.pck` - отдельный чат без чит-команд.
-- `lucid-blocks-console.pck` - отдельный console/debug/admin-пакет для singleplayer/LAN и строительства тестовых миров.
+Это неофициальный форк/продолжение community co-op мода. Для игры нужна
+легальная копия Lucid Blocks. Проект не связан с разработчиками или издателем
+игры.
 
-Сейчас главный MVP - `lucid-blocks-multiplayer.pck`.
+## Пакеты
 
-## Как это работает
+- `lucid-blocks-multiplayer.pck` - выделенный/серверный multiplayer.
+- `lucid-blocks-chat.pck` - отдельный внутриигровой чат.
+- `lucid-blocks-console.pck` - отдельная консоль команд для singleplayer/LAN и админских задач.
 
-Подробно: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+## Что есть в v0.1.0-mvp
 
-- Игровая сессия работает через Godot high-level multiplayer RPC поверх ENet/UDP.
-- Dedicated-сервер владеет миром и применяет изменения блоков, предметов, воды, огня, хранилищ и мобов.
-- Клиент не должен напрямую менять серверный мир: он отправляет request, сервер валидирует действие, применяет его и присылает ack/resync.
-- Server browser берет список QUALIA из локального `user://lucid_blocks_server_registry.json` и/или удаленного registry/master-server.
-- Status/health endpoint отвечает JSON по UDP и показывает `players`, `tps`, `ram_mb`, `packet_backlog`, `dirty_journal_backlog`, `chunk_ticket_count`.
-- Мир грузится через player/action chunk tickets: вокруг игроков и важных действий сервер временно держит активные области.
-- Мульти-региональная загрузка сейчас держится на player/action chunk tickets и native hook/fallback.
+- Кнопка `CO-OP` в главном меню.
+- Список доступных QUALIA-серверов в стиле меню игры.
+- Подключение кликом по карточке сервера.
+- Миром владеет dedicated server, а не игрок-хост.
+- Сервер валидирует запросы на блоки, предметы, воду, огонь, хранилища, урон и сущности.
+- Базовое сохранение персонажа и защита повторного входа.
+- Чат и строка команд.
+- Отображаемые аватары игроков с безопасным дефолтным телом.
+- Статус сервера: TPS, игроки, RAM, backlog пакетов, dirty journal, chunk tickets.
+- Серверные сейвы помечаются как server-only и не должны открываться через singleplayer.
 
-## Безопасность
+![Список QUALIA-серверов](docs/assets/screenshots/server-browser-qualia.jpg)
 
-- Debug/cheat команды выключены по умолчанию.
-- Builder-команды выполняются только сервером и только для админов.
-- Серверные сейвы помечаются как server-only, чтобы их не открывали и не меняли через singleplayer.
-- Клиент ограничивает размеры входящих snapshots, количество entities/drops, длину текста, координаты, урон и knockback.
-- Сервер не должен заставлять клиент выполнять произвольный код.
-- Секрет/печать server save - это защита от случайного локального редактирования, а не DRM.
+## Текущие ограничения
+
+Это экспериментальный MVP, а не официальный polished multiplayer.
+
+- Dedicated server все еще запускается через игру/Proton, поэтому это не настоящий headless-сервер без рендера.
+- Время/погода, поведение мобов и reconciliation предметов требуют дальнейшего тестирования.
+- Большие публичные сервера пока не цель. Сейчас мод рассчитан на маленькие приватные серверы.
+- Нативный загрузчик мира Lucid Blocks изначально сделан вокруг одного центра загрузки. Мод добавляет chunk tickets и optional native hook как совместимый слой.
+- Тестовые/fan аватары в исходниках не считаются частью безопасного публичного core-релиза, если их права не очищены отдельно.
+
+## Скриншоты
+
+![Консольный статус подключения](docs/assets/screenshots/console-connect-status.jpg)
+
+![Команды coords и fly](docs/assets/screenshots/console-coords-fly.jpg)
+
+![Два дефолтных аватара в мире](docs/assets/screenshots/multiplayer-default-avatars.jpg)
+
+![Пример скина аватара](docs/assets/screenshots/avatar-skin-example.jpg)
 
 ## Установка для игрока
 
@@ -42,33 +61,69 @@
 3. Создай папку `mods`, если ее нет.
 4. Удали старые тестовые co-op/multiplayer `.pck`, если они лежат рядом.
 5. Скопируй `dist/lucid-blocks-multiplayer.pck` в `mods`.
-6. Запусти игру и нажми `CO-OP`.
-7. Нажми на карточку сервера в списке `AVAILABLE QUALIA`.
+6. Запусти игру.
+7. Нажми `CO-OP`.
+8. Нажми на карточку сервера в `AVAILABLE QUALIA`.
 
-Подробная инструкция для друга: [docs/FRIEND_INSTALL_RU.md](docs/FRIEND_INSTALL_RU.md).
-
-![Выбор сервера](docs/assets/screenshots/server-browser-qualia.png)
+Подробная инструкция для друга: [docs/FRIEND_INSTALL_RU.md](docs/FRIEND_INSTALL_RU.md)
 
 ## Свой сервер
 
-Свой выделенный сервер поднимается на Linux и публикуется через registry/master-server, чтобы игрокам не приходилось вручную вводить IP и порт.
+Свой dedicated server поднимается на Linux и может публиковаться через
+registry/master-server, чтобы игрокам не приходилось вручную вводить IP и порт.
 
 - Инструкция RU: [docs/LINUX_SERVER_RU.md](docs/LINUX_SERVER_RU.md)
 - Instruction EN: [docs/LINUX_SERVER_EN.md](docs/LINUX_SERVER_EN.md)
 - Логи и health-check: [docs/SERVER_LOGS.md](docs/SERVER_LOGS.md)
 - Registry/master-server: [docs/SERVER_REGISTRY.md](docs/SERVER_REGISTRY.md)
 
-Технические адреса, порты, пароли и deploy-файлы не должны попадать в публичный README, скриншоты или release archive.
+Не публикуй приватные deploy-файлы, пароли, токены, живые IP, порты, Steam
+credentials и локальные логи.
 
-## Скриншоты
+## Как работает сеть
 
-Реальные скриншоты лежат в `docs/assets/screenshots`.
+Подробнее: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
-![Добавление direct server](docs/assets/screenshots/add-server-direct.png)
+- Игровая сессия работает через Godot high-level multiplayer RPC поверх ENet/UDP.
+- Protocol identity: `lucid-blocks-coop`.
+- Protocol version: `1`.
+- Совместимость проверяется по protocol/min-compatible и feature gates, а не по точному PCK hash или косметическому build tag.
+- Health/status dedicated server отвечает маленьким JSON по UDP.
+- Server browser берет список из локального JSON и optional HTTP/HTTPS registry.
+- Steam lobbies остаются legacy-путем для invite/discovery, но dedicated model использует список серверов.
 
-![Console help](docs/assets/screenshots/console-help-command.png)
+## Серверная авторитетность и безопасность
 
-![Console give](docs/assets/screenshots/console-give-command.png)
+Dedicated server - источник истины для мира и сохранения. Клиент отправляет
+request, сервер валидирует, применяет, пишет journal и отправляет ack/resync.
+
+Текущая модель безопасности:
+
+- Debug/cheat команды выключены по умолчанию.
+- Builder-команды доступны только через серверную проверку admin role.
+- Клиент не должен выполнять произвольный код от сервера.
+- Входящие snapshots, текст, количество drops/entities, координаты, урон и knockback ограничены.
+- Спавн сцен на клиенте ограничен разрешенными resource prefixes.
+- Server-only сейвы скрываются/блокируются от обычного singleplayer.
+
+Печать/секрет server save - это защита от случайного локального редактирования,
+а не DRM. Реальная безопасность зависит от прав файловой системы, хоста и
+приватности конфигов.
+
+## Чанки и сохранение
+
+Lucid Blocks изначально грузит мир вокруг одного центра. Для multiplayer мод
+добавляет:
+
+- player tickets вокруг подключенных игроков;
+- short-lived action tickets для блоков, foliage, воды, огня, storage, предметов и resync;
+- priorities и TTL cleanup;
+- optional native multi-region hook;
+- fallback к одному центру, если hook недоступен.
+
+Сервер пишет авторитетные изменения в chunk journal. При старте dedicated server
+делает replay journal до публикации `ready`. Dirty chunks дальше flush/compact
+через dedicated autosave.
 
 ## Сборка
 
@@ -82,19 +137,23 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 Проверка перед публикацией:
 
 ```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 .\scripts\check_release_hygiene.ps1
 git diff --check
+git status --short
 ```
 
-## Публикация
+## Перед открытием репозитория
 
-Перед первым push/release:
+- Не публиковать `deploy.txt`, `.env`, пароли, токены, приватные IP/порты и локальные логи.
+- Оставить [CREDITS.md](CREDITS.md).
+- Не выдавать оригинальный co-op mod за свой.
+- Не класть fan/test аватары в release archives без очищенных прав.
+- Использовать реальные скриншоты из `docs/assets/screenshots`, не мокапы.
 
-1. Не публикуй `deploy.txt`, `.env`, пароли, токены, приватные IP/порты и локальные логи.
-2. Оставь атрибуцию в [CREDITS.md](CREDITS.md).
-3. Не выдавай оригинальный co-op mod за свой: upstream - `parkers0405/lucid-blocks-coop`, автор Parker Settle / Mr_Settle.
-4. Запусти `scripts/check_release_hygiene.ps1` и `git diff --check`.
+## Атрибуция
 
-## Статус
+Оригинальный community co-op mod:
+https://github.com/parkers0405/lucid-blocks-coop by Parker Settle / Mr_Settle.
 
-MVP еще экспериментальный. Singleplayer должен оставаться рабочим, а серверные миры должны открываться только через multiplayer-подключение.
+Полные credits и notes по ассетам: [CREDITS.md](CREDITS.md)
