@@ -173,6 +173,8 @@ journalctl -u lucid-blocks-dedicated.service -f
 find /opt/lucid-blocks-server -path "*lucid blocks/logs/godot.log" -print
 ```
 
+Status fields, log markers, and troubleshooting notes: [SERVER_LOGS.md](SERVER_LOGS.md).
+
 ## 7. Server Registry
 
 Для игроков лучше не раздавать IP/port вручную. Публичный клиент должен получать список серверов из manifest/registry:

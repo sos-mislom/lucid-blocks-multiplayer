@@ -638,7 +638,9 @@ func die() -> void :
         held_item.interact_end()
     dead = true
 
-    if last_attacker == Ref.player:
+    if Ref.coop_manager != null and Ref.coop_manager.has_method("grant_tiamana_to_attacker") and Ref.coop_manager.grant_tiamana_to_attacker(last_attacker, tiamana_drop, Level.TiamanaSource.CUTSCENE):
+        pass
+    elif last_attacker == Ref.player:
         Ref.player.get_node("%Level").give_tiamana(tiamana_drop, Level.TiamanaSource.CUTSCENE)
 
 
@@ -776,6 +778,9 @@ func hold_item(index: int) -> void :
     var item: Item = ItemMap.map(item_state.id)
 
     var held_item_scene: PackedScene = item.held_item_scene
+    if held_item_scene == null and item.held_item_path != "":
+        held_item_scene = ResourceLoader.load(item.held_item_path)
+        item.held_item_scene = held_item_scene
     if held_item_scene == null:
         return
     held_item = held_item_scene.instantiate()
@@ -801,7 +806,14 @@ func equip_equipment() -> void :
         var item_state: ItemState = equipment_inventory.items[index]
         if item_state == null:
             continue
-        var equipment_item: HeldItem = ItemMap.map(item_state.id).held_item_scene.instantiate()
+        var item: Item = ItemMap.map(item_state.id)
+        var equipment_scene: PackedScene = item.held_item_scene
+        if equipment_scene == null and item.held_item_path != "":
+            equipment_scene = ResourceLoader.load(item.held_item_path)
+            item.held_item_scene = equipment_scene
+        if equipment_scene == null:
+            continue
+        var equipment_item: HeldItem = equipment_scene.instantiate()
         %EquipmentHolder.add_child(equipment_item)
         equipment_item.initialize(equipment_inventory, index, self)
         equipment_item.on_equip()

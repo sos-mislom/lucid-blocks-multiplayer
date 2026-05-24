@@ -142,8 +142,14 @@ func die() -> void :
 
     if panic_source == Ref.player:
         if randf() < 0.2:
-            Ref.player.hate += 1
+            if Ref.coop_manager != null and Ref.coop_manager.has_method("grant_player_stat_to_local_player"):
+                Ref.coop_manager.grant_player_stat_to_local_player("hate", 1)
+            else:
+                Ref.player.hate += 1
         Steamworks.set_achievement("BUBBLEBEAR_MASSACRE")
+    elif Ref.coop_manager != null:
+        if randf() < 0.2:
+            Ref.coop_manager.grant_hate_to_attacker(panic_source, 1)
     super.die()
 
 

@@ -38,6 +38,18 @@ func _can_use_multi_region_logic() -> bool:
         and bool(Ref.world.call("uses_coop_multi_region_loading"))
 
 
+func _is_dedicated_server_mode() -> bool:
+    return Ref.coop_manager != null \
+        and Ref.coop_manager.has_method("is_dedicated_server_mode") \
+        and bool(Ref.coop_manager.call("is_dedicated_server_mode"))
+
+
+func _get_server_world_load_center() -> Vector3:
+    if Ref.coop_manager != null and Ref.coop_manager.has_method("get_world_load_center"):
+        return Ref.coop_manager.get_world_load_center(Ref.player.global_position)
+    return Ref.player.global_position
+
+
 func _ready() -> void :
     %SpawnTimer.timeout.connect(_on_timeout.bind(false))
     %RareSpawnTimer.timeout.connect(_on_timeout.bind(true))
@@ -116,6 +128,12 @@ func _get_same_instance_player_count() -> int:
 
 
 func _get_spawn_group_anchors() -> Array:
+    if _can_use_multi_region_logic() and _is_dedicated_server_mode():
+        var dedicated_positions: Array = Ref.coop_manager.get_same_instance_session_positions()
+        if dedicated_positions.is_empty():
+            return [_get_server_world_load_center()]
+        return dedicated_positions
+
     if not _can_use_multi_region_logic() or _get_same_instance_player_count() <= 1:
         return [Ref.player.global_position]
 
@@ -198,7 +216,7 @@ func _is_too_close_to_active_player(spawn_position: Vector3) -> bool:
 func _get_spawn_anchor() -> Vector3:
     if not _can_use_multi_region_logic():
         return Ref.player.global_position
-    return Ref.coop_manager.get_next_same_instance_spawn_anchor(Ref.player.global_position)
+    return Ref.coop_manager.get_next_same_instance_spawn_anchor(_get_server_world_load_center())
 
 
 func attempt_spawn(spawn_position: Vector3, rare: bool = false, care_for_visibility: bool = true) -> bool:

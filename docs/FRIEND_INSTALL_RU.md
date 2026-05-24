@@ -36,7 +36,9 @@ zzz-lucid-blocks-command-chat*.pck
 2. Выбрать сервер по имени `QUALIA`.
 3. Нажать на плашку сервера. Она должна сразу начать подключение к миру.
 
-![QUALIA multiplayer entry](screenshots/main-menu-qualia.png)
+![QUALIA multiplayer entry](assets/screenshots/main-menu-qualia.png)
+![QUALIA server browser](assets/screenshots/server-browser-qualia.png)
+![Direct add server screen](assets/screenshots/add-server-direct.png)
 
 Публичный порт и технический адрес специально не показываются в инструкции и UI.
 

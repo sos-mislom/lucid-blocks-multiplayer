@@ -79,7 +79,10 @@ func _input(event: InputEvent) -> void:
                 _close_chat(true)
                 get_viewport().set_input_as_handled()
             KEY_TAB:
-                _cycle_suggestion(-1 if event.shift_pressed else 1)
+                if event.shift_pressed:
+                    _cycle_suggestion(-1)
+                else:
+                    _apply_suggestion(selected_suggestion_index)
                 get_viewport().set_input_as_handled()
             KEY_UP:
                 _step_command_history(-1)
@@ -338,8 +341,9 @@ func _on_text_submitted(raw_text: String) -> void:
 
     if text.begins_with("/"):
         _push_history(text, COMMAND_COLOR)
-        if Ref.coop_manager != null and Ref.coop_manager.has_method("execute_command"):
-            Ref.coop_manager.execute_command(text)
+        var command_provider = _get_command_provider()
+        if command_provider != null and command_provider.has_method("execute_command"):
+            command_provider.execute_command(text)
         else:
             _push_history("Commands are unavailable right now.", ERROR_COLOR)
     else:
@@ -420,9 +424,19 @@ func _refresh_suggestions() -> void:
 func _get_command_suggestions(text: String) -> Array:
     if not text.begins_with("/"):
         return []
-    if Ref.coop_manager != null and Ref.coop_manager.has_method("get_command_autocomplete_entries"):
-        return Ref.coop_manager.get_command_autocomplete_entries(text)
+    var command_provider = _get_command_provider()
+    if command_provider != null and command_provider.has_method("get_command_autocomplete_entries"):
+        return command_provider.get_command_autocomplete_entries(text)
     return []
+
+func _get_command_provider():
+    var console_provider = Ref.get("console_manager")
+    if console_provider != null:
+        return console_provider
+    var coop_provider = Ref.get("coop_manager")
+    if coop_provider != null:
+        return coop_provider
+    return null
 
 func _rebuild_suggestion_widgets() -> void:
     pass
@@ -509,10 +523,11 @@ func _resolve_suggestion_insert_text(insert_text: String, current_text: String) 
     return current_text.substr(0, last_space + 1) + insert_text
 
 func _capture_coop_status_message(force: bool = false) -> void:
-    if Ref.coop_manager == null:
+    var command_provider = _get_command_provider()
+    if command_provider == null:
         return
 
-    var status_text: String = str(Ref.coop_manager.status_message).strip_edges()
+    var status_text: String = str(command_provider.get("status_message")).strip_edges()
     if status_text == "":
         return
     if not force and status_text == last_status_message:

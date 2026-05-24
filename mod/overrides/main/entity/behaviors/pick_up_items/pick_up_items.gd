@@ -38,8 +38,14 @@ func _on_dropped_item_entered(area: Area3D) -> void:
     if blocks_only and not ItemMap.map(dropped_item.item.id) is Block:
         return
     if not dropped_item.can_collect:
+        if entity == Ref.player and Ref.coop_manager != null and Ref.coop_manager.has_method("sync_local_pickup_item"):
+            Ref.coop_manager.sync_local_pickup_item(dropped_item)
         return
     assert(not Ref.main.debug or dropped_item.item.count > 0)
+
+    if entity == Ref.player and Ref.coop_manager != null and Ref.coop_manager.has_method("sync_local_pickup_item"):
+        if Ref.coop_manager.sync_local_pickup_item(dropped_item):
+            return
 
     if is_instance_valid(inventory_secondary):
         var remaining_item: ItemState = inventory_priority.accept(dropped_item.item, false)

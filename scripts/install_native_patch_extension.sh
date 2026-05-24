@@ -14,7 +14,10 @@ PATCH_INSTANCE_RADIUS_CAP="${PATCH_INSTANCE_RADIUS_CAP:-192}"
 PATCH_RENDER_DISTANCE="${PATCH_RENDER_DISTANCE:-192}"
 
 shopt -s nullglob
-matches=("$EXT_DIR"/build/coopnativepatch/libcoopnativepatch*.dll)
+matches=("$EXT_DIR"/build/coopnativepatch/libcoopnativepatch*.double.x86_64.dll)
+if [[ ${#matches[@]} -eq 0 ]]; then
+  matches=("$EXT_DIR"/build/coopnativepatch/libcoopnativepatch*.dll)
+fi
 if [[ ${#matches[@]} -eq 0 ]]; then
   printf 'Built native patch DLL not found under %s\n' "$EXT_DIR/build/coopnativepatch" >&2
   exit 1
@@ -37,7 +40,8 @@ reloadable = false
 
 [libraries]
 
-windows.release.x86_64 = "$DLL_BASENAME"
+windows.release.x86_64 = "res://coop-native-patch/$DLL_BASENAME"
+windows.debug.x86_64 = "res://coop-native-patch/$DLL_BASENAME"
 EOF
 
 cat > "$CONFIG_PATH" <<EOF

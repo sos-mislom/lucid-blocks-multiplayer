@@ -20,6 +20,7 @@ Recommended public structure:
 
 ```text
 README.md
+README_RU.md
 CREDITS.md
 MOD_SPLIT.md
 SERVER_ROADMAP.md
@@ -62,9 +63,17 @@ rg -n "password|token|secret|deploy|[0-9]{1,3}(\\.[0-9]{1,3}){3}|port" .
 rg -n "CREDITS|parkers0405|Mr_Settle|Sketchfab|CC BY|Mixamo" README.md CREDITS.md MOD_SPLIT.md docs
 ```
 
+- Check that generated files are not staged:
+
+```bash
+git status --short --ignored
+git ls-files .godot __pycache__ logs backups native_patch/runtime_extension/zig-cache-local
+```
+
 - Decide license. Do not publish assets with unclear rights as part of the main release.
 - Build packages locally.
 - Smoke-test singleplayer old save and new save.
+- Smoke-test `CO-OP -> server card -> join world` from a fresh client restart.
 
 ## Release Artifacts
 

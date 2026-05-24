@@ -182,7 +182,10 @@ func clear_cutscene_screen() -> void:
 
 
 func give_tiamana() -> void:
-    Ref.player.get_node("%Level").give_tiamana(tiamana_yield, Level.TiamanaSource.CUTSCENE)
+    if Ref.coop_manager != null and Ref.coop_manager.has_method("grant_tiamana_to_local_player"):
+        Ref.coop_manager.grant_tiamana_to_local_player(tiamana_yield, Level.TiamanaSource.CUTSCENE)
+    else:
+        Ref.player.get_node("%Level").give_tiamana(tiamana_yield, Level.TiamanaSource.CUTSCENE)
 
 
 func stall_world() -> void:

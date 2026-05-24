@@ -21,9 +21,14 @@ $PckPath = (Resolve-Path $PckPath).Path
 $outDir = Split-Path -Parent $OutFile
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
-$tempZip = Join-Path $outDir (".tmp-" + [IO.Path]::GetFileName($OutFile))
+& (Join-Path $PSScriptRoot "check_release_hygiene.ps1") -RootDir $RootDir
+
+$tempZip = Join-Path $outDir (".tmp-" + [IO.Path]::GetFileNameWithoutExtension($OutFile) + "." + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + [IO.Path]::GetExtension($OutFile))
 if (Test-Path $tempZip) {
-    Remove-Item -Force -LiteralPath $tempZip
+    try {
+        Remove-Item -Force -LiteralPath $tempZip
+    } catch {
+    }
 }
 
 Add-Type -AssemblyName System.IO.Compression
@@ -61,6 +66,16 @@ try {
     $zip.Dispose()
 }
 
-Move-Item -Force -LiteralPath $tempZip -Destination $OutFile
+if (Test-Path $OutFile) {
+    try {
+        (Get-Item -LiteralPath $OutFile).Attributes = [System.IO.FileAttributes]::Normal
+    } catch {
+    }
+}
+Copy-Item -Force -LiteralPath $tempZip -Destination $OutFile
+try {
+    Remove-Item -Force -LiteralPath $tempZip
+} catch {
+}
 Write-Host "Wrote $OutFile"
 Get-FileHash $OutFile -Algorithm SHA256

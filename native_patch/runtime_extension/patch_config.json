@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "multi_region_hooks_enabled": false,
+  "instance_radius_cap": 96,
+  "instantiate_chunks_render_distance": 96
+}

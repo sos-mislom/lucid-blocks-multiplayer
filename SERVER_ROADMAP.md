@@ -6,6 +6,53 @@ Settle / Mr_Settle. Public releases must keep `CREDITS.md` and must not present
 upstream work, Lucid Blocks, third-party tools, or third-party assets as our
 original work.
 
+## 2026-05-23 Batch: Roadmap Items 1-8
+
+Current implementation pass:
+
+- Item 1, mod split: core multiplayer now defaults debug console commands, avatar customization, `/avatar` alias, and client visual hotkeys to off. Standalone chat registry no longer advertises debug commands. Public core keeps `/char-select` as the single user-facing character entry point.
+- Item 2, singleplayer protection: V/C camera overhaul is config-gated and camera mode is saved as first-person when the visual pack is disabled. Release hygiene checks now assert safe defaults.
+- Item 3, chunk divergence: clients request an authoritative block resync after rejected place/break/foliage actions. Server can answer with a targeted place/break sync for that block, including delayed dedicated loading when needed.
+- Item 4, mobs/server authority: dedicated host entity activity is now limited by `server_entity_simulation_radius` around active players instead of forcing every tracked mob active. Client entity view radius is separately configurable through `server_entity_view_radius`.
+- Item 5, multi-region loader: GDScript chunk tickets are now implemented on the dedicated server and feed the native multi-region centers when available. Block place/break/resync, foliage, water, fire, storage, and load-focus paths create short-lived tickets; dedicated entity simulation also considers simulation-enabled tickets. Full native `LucidBlocksWorld` rewrite is still the next deeper step if the hook cannot cover a game update.
+- Item 6, save/exit: multiplayer save-and-exit now shows a blocking "LEAVING SERVER" overlay while guest state is flushed, the peer disconnects, and the menu transition runs.
+- Item 7, auto server discovery/privacy: remote registry responses are cached locally with TTL; UI status no longer prints the direct port; status payload port changes are ignored unless the registry entry explicitly allows endpoint updates.
+- Item 8, dedicated optimization: status payload now reports entity view/simulation radius, and dedicated mob processing is bounded by player interest radius to protect TPS.
+
+Git/release note: batch before deploy. Do not tag or push a release until `scripts/check_release_hygiene.ps1`, pack build, local client smoke, and VPS readiness/hash checks pass.
+
+Build artifacts from this batch:
+
+- `dist/lucid-blocks-multiplayer.pck`
+  SHA256: `DE56040C0038551897D6E76C0A55C401E4BA4F2AAB9DBE6B6EB7C83DF6913BAE`
+- `dist/lucid-blocks-chat.pck`
+  SHA256: `88734C7C002F3FE96300081D054F7115F0D2F387BD66A7049E812DB027B7B508`
+- `dist/lucid-blocks-console.pck`
+  SHA256: `4C0E440FF176915D894969AB05480ECD40B93B3BF4D0758D3CA0F84C911420CC`
+- `dist/lucid-blocks-multiplayer-mvp.zip`
+  SHA256: `4A147E3DF3EFAC9A70D9C5031845A224C4DB9AF94969340ACCA885EE1F9E1E3C`
+- Local exporter note: Godot 4.6 on this Windows machine crashes after `[ DONE ] savepack` while writing editor settings/safe-save temp files. The build scripts now tolerate the crash by using the produced safe-save artifact, but the machine can leave locked `.tmp-*` files until Windows releases them.
+
+Latest implementation note:
+
+- Added dedicated-only `server_chunk_tickets` with TTL cleanup and runtime/status counters.
+- World streaming now appends active ticket centers to player centers before pushing native multi-region centers.
+- `get_world_load_center()` can fall back to the highest-priority ticket when native multi-region is not active, preserving the old single-center behavior as a compatibility fallback.
+- Added recent-drop visibility windows for newly dropped/broken items so same-instance peers do not immediately lose direct-spawned drops when normal interest snapshots are still catching up.
+- Expanded dedicated observability: status/runtime payload now includes `ram_mb`, `ram_peak_mb`, `packet_backlog`, `dirty_journal_backlog`, `loaded_region_count`, `native_active_region_centers`, world radius/all-loaded state, and chunk ticket counters. Health logs print these fields every interval.
+- Added `docs/SERVER_LOGS.md` and linked it from README/Linux server docs so admins have one safe shareable place for log/status commands.
+- Release hygiene now checks server-only save hiding, server-only access guard gating, and required status health metrics.
+- Fusion and cutscene-block tiamana rewards now route through the coop reward helper. In singleplayer this still calls the vanilla level node, while connected guests immediately flush persistent state to the host after receiving a reward.
+- Local `hate/faith/lust` rewards now route through a coop stat helper. Mob-specific local hate rewards keep their vanilla fallback, but connected guests immediately flush persistent state after stat changes.
+- Player-facing LAN/direct status messages no longer print raw `host:port`; admin/debug logs still keep endpoint details for troubleshooting.
+- README/friend guide now use PNG UI screenshots for the server browser and direct server add/join flow instead of SVG diagrams. The SERVERS tab has a real `Add Server` action, and the DIRECT tab has a real `Save Server` action that writes a local `user://lucid_blocks_server_registry.json` entry.
+- README now includes two console/debug pack command screenshots for `/help` and `/give` so the console mod description shows the actual intended command surface instead of generic diagrams.
+- Standalone console pack is now real: `mod/console_overrides` builds its own `LucidBlocksConsole` command provider on top of chat, with `/help`, `/give`, `/gamemode`, `/time`, `/weather`, `/kill`, `/fly`, `/spawn`, `/spawnlist`, and autocomplete. The console Ref bootstrap only attaches `coop_manager` when that resource exists, so console-only installs no longer depend on the multiplayer pack.
+- Chunk journal now records authoritative cell state for server-side world dirty notifications, plus water, fire, and storage snapshots. Replay can restore block/water/fire/storage records after a crash, and dirty chunk tracking still feeds compact/snapshot save cleanup.
+- Interest management now throttles unchanged per-peer entity and drop snapshots by distance with heartbeat updates. Clients keep short snapshot grace windows for full entities, far dummy entities, and drops so skipped unchanged packets do not produce flicker or accidental despawns.
+- Release hygiene now asserts reward paths go through the coop helper so level/tiamana regressions do not silently return before a friend build.
+- Verification: `git diff --check` and full pack build passed after the standalone console/chunk-journal/interest-management pass. Godot 4.6 headless `--quit` on this Windows machine still hangs/crashes with `signal 11`, so editor-level validation remains blocked by the local Godot crash.
+
 Живой план доработки dedicated/multiplayer-мода. Этот файл - единая точка правды:
 что строим, зачем, какие механики берем из Minecraft-подхода, какие этапы считаются
 MVP, а какие относятся к хорошему релизу.

@@ -30,12 +30,13 @@ Scope:
 - player list;
 - safe default remote player avatar;
 - server-only world protection;
+- server-authorized admin role model for builder/world-edit commands;
 - Linux/Windows dedicated setup docs.
 
 Out of scope:
 
-- cheat/debug commands;
-- `/gamemode`, `/give`, `/spawn`, `/time`, `/weather`, `/kill`, `/fly`;
+- public cheat/debug commands;
+- public access to `/gamemode`, `/give`, `/spawn`, `/time`, `/weather`, `/kill`, `/fly`;
 - questionable/fan avatar packs;
 - camera/zoom hotkeys such as `V` and `C`;
 - public docs that expose private server endpoints.
@@ -83,15 +84,26 @@ Scope:
 Target commands:
 
 - `/help`
-- `/give [amount] <item_id>`
-- `/tp <target>`
+- `/give [amount] <item_id_or_name>`
 - `/time <set|query> ...`
 - `/weather <clear|rain|thunder>`
 - `/spawn <mob_id>`
 - `/spawnlist`
-- `/spawnmenu`
-- `/gamemode <creative|survival>` after it is fixed
-- `/fly` after menu/inventory regressions are fixed
+- `/gamemode <creative|survival>`
+- `/fly`
+- `/wand`, `/pos1`, `/pos2`, `/sel`
+- `/fill <block>`, `/clear [water]`, `/floor <block> [y]`
+- `/flat [radius_chunks] [block] [y]`
+- `/border [radius_chunks] [block] [height]`
+- `/peaceful [on|off]`, `/daylock [on|off]`
+- `/builder_setup [radius_chunks] [block] [y]`
+
+Builder tools:
+
+- `/wand` is a virtual WorldEdit-style wand; look at a block and run `/pos1` or `/pos2`.
+- `/builder_setup` switches to creative/fly, locks day, disables spawning, clears current mobs, flattens loaded chunks around the player, and builds a physical border wall.
+- Chunk limiting in the console pack is a physical world border, not a generator/native loader restriction.
+- In the multiplayer pack these commands also exist, but the server executes them only after admin role validation by `player_key`.
 
 Rules:
 

@@ -19,6 +19,7 @@ public:
     bool patch_loaded_instantiate_chunks_render_distance(int render_distance);
     bool patch_world_streaming_limits(int max_radius, int render_distance);
     bool restore_default_world_streaming_limits();
+    bool set_dedicated_no_render_enabled(bool enabled);
     bool install_multi_region_radius_hooks();
     void set_world_active_region_centers(Object *world, Array centers);
     void clear_world_active_region_centers(Object *world);

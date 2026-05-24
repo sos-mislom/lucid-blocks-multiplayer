@@ -43,13 +43,12 @@ var selected_suggestion_index: int = -1
 var COMMAND_REGISTRY: Dictionary = {
     "/help": {"desc": "Show list of commands", "args": []},
     "/tp": {"desc": "Teleport to player or coordinates", "args": ["<target>", "[destination]"]},
-    "/gamemode": {"desc": "Change player game mode", "args": ["<creative|survival|spectator>"]},
-    "/spawn": {"desc": "Spawn an entity at your location", "args": ["<entity>", "[count]"]},
-    "/spawnlist": {"desc": "List all spawnable entities", "args": []},
-    "/spawnmenu": {"desc": "Open the mob spawn browser", "args": []},
-    "/avatar": {"desc": "Change your player avatar", "args": ["<id>"]},
+    "/char-select": {"desc": "Open character select menu", "args": []},
     "/host": {"desc": "Host a multiplayer server", "args": ["[port]"]},
     "/join": {"desc": "Join a multiplayer server", "args": ["<ip>", "[port]"]},
+    "/steam_host": {"desc": "Host through Steam", "args": []},
+    "/steam_invite": {"desc": "Open Steam invite dialog", "args": []},
+    "/steam_join": {"desc": "Join a Steam lobby", "args": ["<lobby_id>"]},
     "/pocket": {"desc": "Travel to a pocket dimension", "args": []},
     "/visit": {"desc": "Visit a player's pocket dimension", "args": []}
 }
@@ -83,7 +82,10 @@ func _input(event: InputEvent) -> void:
                 _close_chat(true)
                 get_viewport().set_input_as_handled()
             KEY_TAB:
-                _cycle_suggestion(-1 if event.shift_pressed else 1)
+                if event.shift_pressed:
+                    _cycle_suggestion(-1)
+                else:
+                    _apply_suggestion(selected_suggestion_index)
                 get_viewport().set_input_as_handled()
             KEY_UP:
                 _step_command_history(-1)
@@ -99,7 +101,7 @@ func _input(event: InputEvent) -> void:
     if event.unicode == 47 or event.keycode == KEY_SLASH:
         _open_chat("/")
         get_viewport().set_input_as_handled()
-    elif event.keycode == KEY_T or event.keycode == KEY_ENTER:
+    elif event.keycode == KEY_N or event.keycode == KEY_ENTER:
         _open_chat("")
         get_viewport().set_input_as_handled()
 
@@ -326,8 +328,9 @@ func _on_text_submitted(raw_text: String) -> void:
 
     if text.begins_with("/"):
         _push_history(text, COMMAND_COLOR)
-        if Ref.coop_manager != null and Ref.coop_manager.has_method("execute_command"):
-            Ref.coop_manager.execute_command(text)
+        var command_provider = _get_command_provider()
+        if command_provider != null and command_provider.has_method("execute_command"):
+            command_provider.execute_command(text)
         else:
             _push_history("Commands are unavailable right now.", ERROR_COLOR)
     else:
@@ -399,7 +402,7 @@ func _refresh_suggestions() -> void:
             var insert_text = str(selected.get("insert", ""))
             
             var resulting_text = insert_text
-            if not resulting_text.begins_with(text) and not text.ends_with(" "):
+            if not insert_text.begins_with("/") and not resulting_text.begins_with(text) and not text.ends_with(" "):
                 var last_space = text.rfind(" ")
                 if last_space != -1:
                     resulting_text = text.substr(0, last_space + 1) + insert_text
@@ -413,9 +416,19 @@ func _refresh_suggestions() -> void:
 func _get_command_suggestions(text: String) -> Array:
     if not text.begins_with("/"):
         return []
-    if Ref.coop_manager != null and Ref.coop_manager.has_method("get_command_autocomplete_entries"):
-        return Ref.coop_manager.get_command_autocomplete_entries(text)
+    var command_provider = _get_command_provider()
+    if command_provider != null and command_provider.has_method("get_command_autocomplete_entries"):
+        return command_provider.get_command_autocomplete_entries(text)
     return []
+
+func _get_command_provider():
+    var console_provider = Ref.get("console_manager")
+    if console_provider != null:
+        return console_provider
+    var coop_provider = Ref.get("coop_manager")
+    if coop_provider != null:
+        return coop_provider
+    return null
 
 func _rebuild_suggestion_widgets() -> void:
     pass
@@ -459,7 +472,7 @@ func _cycle_suggestion(step: int) -> void:
     var text = input.text
     var resulting_text = insert_text
     
-    if not resulting_text.to_lower().begins_with(text.to_lower()) and not text.ends_with(" "):
+    if not insert_text.begins_with("/") and not resulting_text.to_lower().begins_with(text.to_lower()) and not text.ends_with(" "):
         var last_space = text.rfind(" ")
         if last_space != -1:
             resulting_text = text.substr(0, last_space + 1) + insert_text
@@ -487,7 +500,7 @@ func _apply_suggestion(index: int, preserve_focus: bool = true) -> void:
     var text = input.text
     var resulting_text = insert_text
     
-    if not resulting_text.to_lower().begins_with(text.to_lower()) and not text.ends_with(" "):
+    if not insert_text.begins_with("/") and not resulting_text.to_lower().begins_with(text.to_lower()) and not text.ends_with(" "):
         var last_space = text.rfind(" ")
         if last_space != -1:
             resulting_text = text.substr(0, last_space + 1) + insert_text
@@ -500,10 +513,11 @@ func _apply_suggestion(index: int, preserve_focus: bool = true) -> void:
         input.grab_focus()
 
 func _capture_coop_status_message(force: bool = false) -> void:
-    if Ref.coop_manager == null:
+    var command_provider = _get_command_provider()
+    if command_provider == null:
         return
 
-    var status_text: String = str(Ref.coop_manager.status_message).strip_edges()
+    var status_text: String = str(command_provider.get("status_message")).strip_edges()
     if status_text == "":
         return
     if not force and status_text == last_status_message:

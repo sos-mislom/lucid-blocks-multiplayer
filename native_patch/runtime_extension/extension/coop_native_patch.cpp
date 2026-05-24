@@ -46,8 +46,8 @@ namespace {
 static constexpr const char *GDBLOCKS_DLL_NAME = "libgdblocks.windows.template_release.double.x86_64.dll";
 static constexpr int DEFAULT_INSTANCE_RADIUS_CAP = 96;
 static constexpr int DEFAULT_INSTANTIATE_CHUNKS_RENDER_DISTANCE = 96;
-static constexpr int MIN_INSTANCE_RADIUS = 48;
-static constexpr int MIN_RENDER_DISTANCE = 48;
+static constexpr int MIN_INSTANCE_RADIUS = 16;
+static constexpr int MIN_RENDER_DISTANCE = 16;
 static constexpr int CHUNK_AXIS_SIZE = 16;
 static constexpr int MAX_CHUNK_LOOP_RADIUS = 127;
 static constexpr size_t MAX_ACTIVE_REGION_CENTERS = 8;
@@ -84,38 +84,66 @@ enum MultiRegionHookId : uint32_t {
 
 static constexpr PatchSite INSTANCE_RADIUS_CAP_PATCH = {
     "set_instance_radius cap",
-    0x0005d004,
-    0x0005d006,
+    0x00062e44,
+    0x00062e46,
 };
 
 static constexpr PatchSite INSTANTIATE_DISTANCE_SQUARED_PATCH = {
     "instantiate_chunks squared radius",
-    0x000589a5,
-    0x000589a7,
+    0x0005d955,
+    0x0005d957,
 };
 
 static constexpr PatchSite INSTANTIATE_LOOP_START_PATCHES[] = {
-    {"instantiate_chunks y loop start", 0x000588e5, 0x000588e8},
-    {"instantiate_chunks x loop start", 0x00058923, 0x00058926},
-    {"instantiate_chunks z loop start", 0x00058953, 0x00058956},
+    {"instantiate_chunks y loop start", 0x0005d895, 0x0005d898},
+    {"instantiate_chunks x loop start", 0x0005d8d3, 0x0005d8d6},
+    {"instantiate_chunks z loop start", 0x0005d903, 0x0005d906},
 };
 
 static constexpr PatchSite INSTANTIATE_LOOP_END_PATCHES[] = {
-    {"instantiate_chunks z loop end", 0x00058eb6, 0x00058eb9},
-    {"instantiate_chunks x loop end", 0x00058ecb, 0x00058ece},
-    {"instantiate_chunks y loop end", 0x00058ee0, 0x00058ee3},
+    {"instantiate_chunks z loop end", 0x0005de79, 0x0005de7c},
+    {"instantiate_chunks x loop end", 0x0005de8e, 0x0005de91},
+    {"instantiate_chunks y loop end", 0x0005dea3, 0x0005dea6},
 };
 
-static constexpr uint64_t INSTANTIATE_CHUNKS_FUNCTION_RVA = 0x00058890;
+static constexpr uint64_t INSTANTIATE_CHUNKS_FUNCTION_RVA = 0x0005d840;
+
+struct FunctionEntryPatchSite {
+    const char *label;
+    uint64_t function_rva;
+    std::array<uint8_t, 8> expected_prefix;
+    size_t prefix_length;
+};
+
+static constexpr FunctionEntryPatchSite DEDICATED_NO_RENDER_PATCH_SITES[] = {
+    {
+        "Chunk::generate_mesh",
+        0x00013770,
+        {0x48, 0x8b, 0xc4, 0x48, 0x89, 0x58, 0x10, 0x55},
+        8,
+    },
+    {
+        "Chunk::generate_water_mesh",
+        0x00014f20,
+        {0x48, 0x89, 0x5c, 0x24, 0x10, 0x48, 0x89, 0x74},
+        8,
+    },
+    {
+        "Chunk::generate_water_surface_mesh",
+        0x00015480,
+        {0x40, 0x55, 0x41, 0x54, 0x41, 0x56, 0x48, 0x8d},
+        8,
+    },
+};
 
 static constexpr MultiRegionHookSite MULTI_REGION_HOOK_SITES[] = {
-    {"update_loaded_region decoration eviction", 0x0005f04e, 12, 0x0005f14a, 0x0005f09b},
-    {"update_loaded_region structure eviction", 0x0005f21f, 12, 0x0005f292, 0x0005f26c},
-    {"update_loaded_region decoration init", 0x0005f730, 14, 0x0005f778, 0x0005f7a4},
-    {"update_loaded_region available chunk keep", 0x0005f8f8, 15, 0x0005fa3c, 0x0005f947},
-    {"update_loaded_region chunk assignment radius", 0x0005fba3, 15, 0x0005fbf4, 0x0005fd52},
-    {"simulate_dynamic water tick radius", 0x0005dd41, 14, 0x0005dd8e, 0x0005dd92},
-    {"simulate_dynamic surface render radius", 0x0005e02c, 16, 0x0005e07b, 0x0005e080},
+    {"update_loaded_region decoration eviction", 0x0006473e, 12, 0x0006482e, 0x0006478b},
+    {"update_loaded_region structure eviction", 0x0006490e, 12, 0x0006497e, 0x0006495b},
+    {"update_loaded_region decoration init", 0x00064e20, 14, 0x00064e68, 0x00064e92},
+    {"update_loaded_region available chunk keep", 0x00064fe7, 15, 0x0006512d, 0x00065036},
+    {"update_loaded_region chunk assignment radius", 0x000652a1, 15, 0x000652f2, 0x0006544e},
+    {"simulate_dynamic water tick radius", 0x00063411, 14, 0x0006345e, 0x00063462},
+    {"simulate_dynamic surface render radius", 0x000636fc, 16, 0x0006374b, 0x00063750},
 };
 
 #ifdef _WIN32
@@ -133,6 +161,7 @@ void coop_simulate_radius_hook_2();
 static std::array<NativeChunkCenter, MAX_ACTIVE_REGION_CENTERS> g_active_region_centers = {};
 static uint32_t g_active_region_center_count = 0;
 static bool g_multi_region_hooks_installed = false;
+static bool g_dedicated_no_render_enabled = false;
 static std::mutex g_world_center_lock;
 static std::unordered_map<const void *, std::vector<NativeChunkCenter>> g_world_active_region_centers;
 static NativeChunkCenter snap_center_to_chunk(const Vector3 &position);
@@ -270,6 +299,24 @@ static bool supports_instantiate_chunks_patch(HMODULE module) {
            has_instruction_prefix(module, INSTANTIATE_LOOP_END_PATCHES[2].instruction_rva, positive_loop_prefix_y);
 }
 
+static bool supports_dedicated_no_render_patch(HMODULE module) {
+    for (const FunctionEntryPatchSite &site : DEDICATED_NO_RENDER_PATCH_SITES) {
+        if (site.prefix_length == 0 || site.prefix_length > site.expected_prefix.size()) {
+            return false;
+        }
+
+        const uint8_t *address = resolve_rva(module, site.function_rva);
+        if (*address == 0xc3) {
+            continue;
+        }
+        if (std::memcmp(address, site.expected_prefix.data(), site.prefix_length) != 0) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 static bool supports_multi_region_hook_patch(HMODULE module) {
     static constexpr std::array<uint8_t, 6> update_deco_evict_prefix = {0x8b, 0x87, 0x10, 0x01, 0x00, 0x00};
     static constexpr std::array<uint8_t, 6> update_struct_evict_prefix = {0x8b, 0x87, 0x10, 0x01, 0x00, 0x00};
@@ -306,7 +353,7 @@ static uint32_t get_current_instantiate_chunks_radius_squared(HMODULE module) {
 
 static bool validate_instance_radius_cap(int max_radius, int current_render_distance, String *error_message) {
     if (max_radius < MIN_INSTANCE_RADIUS) {
-        *error_message = "instance_radius cap must stay at least 48.";
+        *error_message = "instance_radius cap must stay at least 16.";
         return false;
     }
 
@@ -324,7 +371,7 @@ static bool validate_instance_radius_cap(int max_radius, int current_render_dist
 
 static bool validate_render_distance(int render_distance, int current_instance_cap, String *error_message) {
     if (render_distance < MIN_RENDER_DISTANCE) {
-        *error_message = "instantiate_chunks render distance must stay at least 48.";
+        *error_message = "instantiate_chunks render distance must stay at least 16.";
         return false;
     }
 
@@ -375,6 +422,36 @@ static bool patch_instantiate_chunks_render_distance(HMODULE module, int render_
         }
     }
 
+    return true;
+}
+
+static bool patch_dedicated_no_render(HMODULE module, bool enabled) {
+    for (const FunctionEntryPatchSite &site : DEDICATED_NO_RENDER_PATCH_SITES) {
+        uint8_t *address = resolve_rva(module, site.function_rva);
+        const uint8_t current = *address;
+
+        if (enabled) {
+            if (current == 0xc3) {
+                continue;
+            }
+            if (std::memcmp(address, site.expected_prefix.data(), site.prefix_length) != 0) {
+                return false;
+            }
+            const uint8_t ret_opcode = 0xc3;
+            if (!patch_bytes(address, &ret_opcode, sizeof(ret_opcode))) {
+                return false;
+            }
+        } else {
+            if (current != 0xc3) {
+                continue;
+            }
+            if (!patch_bytes(address, site.expected_prefix.data(), 1)) {
+                return false;
+            }
+        }
+    }
+
+    g_dedicated_no_render_enabled = enabled;
     return true;
 }
 
@@ -605,6 +682,7 @@ void CoopNativePatch::_bind_methods() {
     ClassDB::bind_method(D_METHOD("patch_loaded_instantiate_chunks_render_distance", "render_distance"), &CoopNativePatch::patch_loaded_instantiate_chunks_render_distance);
     ClassDB::bind_method(D_METHOD("patch_world_streaming_limits", "max_radius", "render_distance"), &CoopNativePatch::patch_world_streaming_limits);
     ClassDB::bind_method(D_METHOD("restore_default_world_streaming_limits"), &CoopNativePatch::restore_default_world_streaming_limits);
+    ClassDB::bind_method(D_METHOD("set_dedicated_no_render_enabled", "enabled"), &CoopNativePatch::set_dedicated_no_render_enabled);
     ClassDB::bind_method(D_METHOD("install_multi_region_radius_hooks"), &CoopNativePatch::install_multi_region_radius_hooks);
     ClassDB::bind_method(D_METHOD("set_world_active_region_centers", "world", "centers"), &CoopNativePatch::set_world_active_region_centers);
     ClassDB::bind_method(D_METHOD("clear_world_active_region_centers", "world"), &CoopNativePatch::clear_world_active_region_centers);
@@ -645,6 +723,8 @@ Dictionary CoopNativePatch::get_status() const {
         status["current_instantiate_chunks_chunk_radius"] = int64_t(get_current_chunk_loop_radius(module));
         status["current_instantiate_chunks_radius_squared"] = int64_t(get_current_instantiate_chunks_radius_squared(module));
         status["world_radius_pair_safe"] = current_render_distance >= current_instance_cap;
+        status["dedicated_no_render_supported"] = supports_dedicated_no_render_patch(module);
+        status["dedicated_no_render_enabled"] = g_dedicated_no_render_enabled;
     }
 #else
     status["platform"] = String("non_windows");
@@ -780,6 +860,32 @@ bool CoopNativePatch::restore_default_world_streaming_limits() {
         DEFAULT_INSTANCE_RADIUS_CAP,
         DEFAULT_INSTANTIATE_CHUNKS_RENDER_DISTANCE
     );
+}
+
+bool CoopNativePatch::set_dedicated_no_render_enabled(bool enabled) {
+#ifndef _WIN32
+    UtilityFunctions::printerr("[lucid-blocks-coop] Dedicated no-render patch is only implemented for Windows builds.");
+    return false;
+#else
+    HMODULE module = get_gdblocks_module();
+    if (module == nullptr) {
+        UtilityFunctions::printerr("[lucid-blocks-coop] Could not find loaded gdblocks DLL.");
+        return false;
+    }
+
+    if (!supports_dedicated_no_render_patch(module)) {
+        UtilityFunctions::printerr("[lucid-blocks-coop] This gdblocks DLL does not match the known dedicated no-render patch sites.");
+        return false;
+    }
+
+    if (!patch_dedicated_no_render(module, enabled)) {
+        UtilityFunctions::printerr("[lucid-blocks-coop] Failed to patch dedicated no-render mesh functions.");
+        return false;
+    }
+
+    UtilityFunctions::print("[lucid-blocks-coop] Dedicated no-render mesh patch enabled=", enabled, ".");
+    return true;
+#endif
 }
 
 bool CoopNativePatch::install_multi_region_radius_hooks() {

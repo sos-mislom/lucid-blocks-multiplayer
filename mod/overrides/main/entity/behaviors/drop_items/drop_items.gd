@@ -21,13 +21,16 @@ func drop_and_remove_from_inventory(inventory: Inventory, index: int) -> void:
 
     var to_drop: ItemState = inventory.items[index]
     if to_drop != null:
+        var inventory_snapshot: Dictionary = {}
+        if entity == Ref.player and Ref.coop_manager != null and Ref.coop_manager.has_method("capture_inventory_snapshot"):
+            inventory_snapshot = Ref.coop_manager.capture_inventory_snapshot(inventory)
         to_drop = to_drop.duplicate()
         to_drop.count = 1
         inventory.change_amount(index, -1)
-        drop_item(to_drop)
+        drop_item(to_drop, false, inventory_snapshot)
 
 
-func drop_item(item: ItemState, override_disable: bool = false) -> void:
+func drop_item(item: ItemState, override_disable: bool = false, inventory_snapshot: Dictionary = {}) -> void:
     if not override_disable and (entity.disabled or not enabled):
         return
     if Ref.coop_manager != null and Ref.coop_manager.is_client_synced_entity(entity):
@@ -36,7 +39,7 @@ func drop_item(item: ItemState, override_disable: bool = false) -> void:
 
     var spawn_position: Vector3 = drop_spawn.global_position - Vector3(0.5, 0.5, 0.5)
     var launch_velocity: Vector3 = get_throw_direction() * throw_speed + entity.velocity
-    if entity == Ref.player and Ref.coop_manager != null and Ref.coop_manager.sync_local_drop_item(item, spawn_position, launch_velocity):
+    if entity == Ref.player and Ref.coop_manager != null and Ref.coop_manager.sync_local_drop_item(item, spawn_position, launch_velocity, inventory_snapshot):
         return
 
     var new_item: DroppedItem = dropped_item_scene.instantiate()

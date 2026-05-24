@@ -43,15 +43,22 @@ function Export-Pack {
 
     $outDir = Split-Path -Parent $OutFile
     New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-    $tempOutFile = Join-Path $outDir (".tmp-" + [IO.Path]::GetFileName($OutFile))
-    $stdoutFile = Join-Path $outDir (".tmp-" + [IO.Path]::GetFileName($OutFile) + ".stdout.log")
-    $stderrFile = Join-Path $outDir (".tmp-" + [IO.Path]::GetFileName($OutFile) + ".stderr.log")
+    $tempSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $outLeafNoExt = [IO.Path]::GetFileNameWithoutExtension($OutFile)
+    $outExt = [IO.Path]::GetExtension($OutFile)
+    $tempOutFile = Join-Path $outDir (".tmp-" + $outLeafNoExt + "." + $tempSuffix + $outExt)
+    $stdoutFile = Join-Path $outDir (".tmp-" + [IO.Path]::GetFileName($OutFile) + "." + $tempSuffix + ".stdout.log")
+    $stderrFile = Join-Path $outDir (".tmp-" + [IO.Path]::GetFileName($OutFile) + "." + $tempSuffix + ".stderr.log")
 
     foreach ($tempFile in @($tempOutFile, $stdoutFile, $stderrFile)) {
         if (Test-Path $tempFile) {
             Remove-Item -Force -LiteralPath $tempFile
         }
     }
+    $tempLeaf = [IO.Path]::GetFileName($tempOutFile)
+    Get-ChildItem -LiteralPath $outDir -File -Force |
+        Where-Object { $_.Name.StartsWith($tempLeaf, [System.StringComparison]::OrdinalIgnoreCase) } |
+        ForEach-Object { Remove-Item -Force -LiteralPath $_.FullName }
 
     Write-Host "Building $Label -> $OutFile"
     $args = @("--headless", "--path", $ProjectDir, "--export-pack", "Linux/X11", $tempOutFile)
@@ -71,17 +78,59 @@ function Export-Pack {
         Get-Content -LiteralPath $stderrFile | ForEach-Object { Write-Host $_ }
     }
 
-    if ($process.ExitCode -ne 0) {
+    $stdoutText = ""
+    if (Test-Path $stdoutFile) {
+        $stdoutText = Get-Content -LiteralPath $stdoutFile -Raw
+    }
+    if ($process.ExitCode -ne 0 -and -not (Test-Path $tempOutFile) -and $stdoutText -match "\[ DONE \].*savepack") {
+        $tempLeaf = [IO.Path]::GetFileName($tempOutFile)
+        $safeSaveCandidate = Get-ChildItem -LiteralPath $outDir -File -Force |
+            Where-Object { $_.Name.StartsWith($tempLeaf, [System.StringComparison]::OrdinalIgnoreCase) -and $_.Length -gt 0 } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+        if ($null -ne $safeSaveCandidate) {
+            Write-Warning "$Label exporter exited with $($process.ExitCode) after savepack; using safe-save artifact $($safeSaveCandidate.Name)"
+            try {
+                $safeSaveCandidate.Attributes = [System.IO.FileAttributes]::Normal
+            } catch {
+            }
+            Start-Sleep -Milliseconds 500
+            Copy-Item -Force -LiteralPath $safeSaveCandidate.FullName -Destination $tempOutFile
+            try {
+                Remove-Item -Force -LiteralPath $safeSaveCandidate.FullName
+            } catch {
+            }
+        }
+    }
+    if ($process.ExitCode -ne 0 -and -not (Test-Path $tempOutFile)) {
         throw "$Label export failed with exit code $($process.ExitCode)"
     }
     if (-not (Test-Path $tempOutFile)) {
         throw "$Label export did not produce output file: $tempOutFile"
     }
 
-    Move-Item -Force -LiteralPath $tempOutFile -Destination $OutFile
+    try {
+        (Get-Item -LiteralPath $tempOutFile).Attributes = [System.IO.FileAttributes]::Normal
+    } catch {
+    }
+    if (Test-Path $OutFile) {
+        try {
+            (Get-Item -LiteralPath $OutFile).Attributes = [System.IO.FileAttributes]::Normal
+        } catch {
+        }
+    }
+    Copy-Item -Force -LiteralPath $tempOutFile -Destination $OutFile
+    try {
+        Remove-Item -Force -LiteralPath $tempOutFile
+    } catch {
+    }
     foreach ($tempFile in @($stdoutFile, $stderrFile)) {
         if (Test-Path $tempFile) {
-            Remove-Item -Force -LiteralPath $tempFile
+            try {
+                Remove-Item -Force -LiteralPath $tempFile
+            } catch {
+                Write-Warning "Could not remove temporary export log '$tempFile': $($_.Exception.Message)"
+            }
         }
     }
 }
@@ -104,7 +153,19 @@ function New-SanitizedMultiplayerProject {
         if (-not $resolvedStageDir.Path.StartsWith($resolvedWorkRoot.Path, [System.StringComparison]::OrdinalIgnoreCase)) {
             throw "Refusing to remove staged export outside work dir: $resolvedStageDir"
         }
-        Remove-Item -Recurse -Force -LiteralPath $resolvedStageDir.Path
+        Get-ChildItem -LiteralPath $resolvedStageDir.Path -Recurse -Force -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                try {
+                    $_.Attributes = [System.IO.FileAttributes]::Normal
+                } catch {
+                }
+            }
+        try {
+            Remove-Item -Recurse -Force -LiteralPath $resolvedStageDir.Path
+        } catch {
+            Write-Warning "Could not remove staged export '$stageDir': $($_.Exception.Message)"
+            $stageDir = Join-Path $workRoot ("export\multiplayer_core_" + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
+        }
     }
 
     New-Item -ItemType Directory -Force -Path $stageDir | Out-Null

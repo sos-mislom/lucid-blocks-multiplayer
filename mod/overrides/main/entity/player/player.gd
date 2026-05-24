@@ -149,9 +149,10 @@ func _ready() -> void :
     camera_pitch = %Camera3D.rotation.x
     _reset_camera_overhaul_state()
     _apply_camera_mode_visuals()
-    call_deferred("_ensure_local_avatar_marker")
-    call_deferred("_apply_avatar_sound_overrides")
-    call_deferred("_apply_avatar_hand_color")
+    if not _is_dedicated_server_boot():
+        call_deferred("_ensure_local_avatar_marker")
+        call_deferred("_apply_avatar_sound_overrides")
+        call_deferred("_apply_avatar_hand_color")
     print("Player ready.")
 
 
@@ -160,6 +161,41 @@ func _get_coop_manager() -> Node:
     if ref != null and ref.get("coop_manager") != null:
         return ref.get("coop_manager")
     return null
+
+
+func _is_dedicated_server_boot() -> bool:
+    var coop_manager: Node = _get_coop_manager()
+    if coop_manager != null and coop_manager.has_method("is_dedicated_server_mode"):
+        return bool(coop_manager.call("is_dedicated_server_mode"))
+    var args: Array[String] = []
+    for arg in OS.get_cmdline_args():
+        args.append(str(arg))
+    for arg in OS.get_cmdline_user_args():
+        var user_arg: String = str(arg)
+        if not args.has(user_arg):
+            args.append(user_arg)
+    for raw_arg in args:
+        var arg: String = str(raw_arg).strip_edges()
+        if arg == "--lb-dedicated" or arg == "--lucid-dedicated" or arg == "--dedicated":
+            return true
+        if arg.begins_with("--lb-dedicated=") or arg.begins_with("--lucid-dedicated=") or arg.begins_with("--dedicated="):
+            var value: String = arg.substr(arg.find("=") + 1).strip_edges().to_lower()
+            return not ["0", "false", "no", "off"].has(value)
+    return false
+
+
+func _is_client_visual_mod_enabled() -> bool:
+    var coop_manager: Node = _get_coop_manager()
+    if coop_manager != null and coop_manager.has_method("is_client_visual_mod_enabled"):
+        return bool(coop_manager.call("is_client_visual_mod_enabled"))
+    return false
+
+
+func _is_avatar_customization_enabled() -> bool:
+    var coop_manager: Node = _get_coop_manager()
+    if coop_manager != null and coop_manager.has_method("is_avatar_customization_enabled"):
+        return bool(coop_manager.call("is_avatar_customization_enabled"))
+    return false
 
 
 var _avatar_voice_player: AudioStreamPlayer
@@ -182,6 +218,8 @@ const AVATAR_VOICE_COOLDOWNS: Dictionary = {
 
 
 func _apply_avatar_sound_overrides() -> void:
+    if _is_dedicated_server_boot() or not _is_avatar_customization_enabled():
+        return
     var coop_manager: Node = _get_coop_manager()
     if coop_manager == null or not coop_manager.has_method("get_local_avatar_id"):
         return
@@ -240,6 +278,8 @@ func _on_avatar_damage_voice(_damage: int) -> void:
 
 
 func _apply_avatar_hand_color() -> void:
+    if not _is_avatar_customization_enabled():
+        return
     var hand_node: Node = get_node_or_null("%PlayerHand")
     if hand_node != null and hand_node.has_method("set_hand_color"):
         hand_node.call("set_hand_color")
@@ -303,6 +343,8 @@ func _cycle_camera_mode() -> void:
 
 
 func _ensure_local_avatar_marker() -> void:
+    if _is_dedicated_server_boot():
+        return
     if is_instance_valid(local_avatar_marker):
         return
 
@@ -323,6 +365,8 @@ func _ensure_local_avatar_marker() -> void:
 
 
 func _get_local_avatar_id_for_marker() -> String:
+    if not _is_avatar_customization_enabled():
+        return "default_blocky"
     var coop_manager: Node = _get_coop_manager()
     if coop_manager != null and coop_manager.has_method("get_local_avatar_id"):
         return str(coop_manager.call("get_local_avatar_id"))
@@ -342,6 +386,8 @@ func _get_local_action_state() -> int:
 
 
 func _sync_local_avatar_marker() -> void:
+    if _is_dedicated_server_boot():
+        return
     _ensure_local_avatar_marker()
     if not is_instance_valid(local_avatar_marker):
         return
@@ -397,7 +443,7 @@ func _resolve_camera_world_position(pivot_position: Vector3) -> Vector3:
 
 
 func _is_first_person_zoom_requested() -> bool:
-    return movement_enabled and MouseHandler.fully_captured and _is_first_person_camera_mode() and Input.is_key_pressed(KEY_C)
+    return _is_client_visual_mod_enabled() and movement_enabled and MouseHandler.fully_captured and _is_first_person_camera_mode() and Input.is_key_pressed(KEY_C)
 
 
 func _reset_camera_overhaul_state() -> void:
@@ -424,7 +470,7 @@ func _get_camera_overhaul_turn_eased(x: float) -> float:
 
 
 func _get_first_person_camera_overhaul_rotation(delta: float) -> Vector3:
-    if not _is_first_person_camera_mode():
+    if not _is_client_visual_mod_enabled() or not _is_first_person_camera_mode():
         camera_overhaul_prev_yaw = %RotationPivot.rotation.y
         camera_overhaul_prev_pitch = camera_pitch
         return Vector3.ZERO
@@ -634,7 +680,7 @@ func _process(delta: float) -> void :
     if disabled:
         return
 
-    if _avatar_voice_cooldown > 0.0:
+    if not _is_dedicated_server_boot() and _avatar_voice_cooldown > 0.0:
         _avatar_voice_cooldown -= delta
 
 
@@ -788,7 +834,7 @@ func _input(event: InputEvent) -> void :
 
     if local_movement_enabled and event is InputEventKey:
         var key_event := event as InputEventKey
-        if key_event.pressed and not key_event.echo and key_event.keycode == KEY_V:
+        if _is_client_visual_mod_enabled() and key_event.pressed and not key_event.echo and key_event.keycode == KEY_V:
             _cycle_camera_mode()
             get_viewport().set_input_as_handled()
             return
@@ -879,7 +925,7 @@ func save_file(file: SaveFile) -> void :
 
     file.set_data("node/player/global_position", global_position, false)
     file.set_data("node/player/camera_angle", camera_pitch, false)
-    file.set_data("node/player/camera_mode", camera_mode, false)
+    file.set_data("node/player/camera_mode", camera_mode if _is_client_visual_mod_enabled() else CAMERA_MODE_FIRST_PERSON, false)
     file.set_data("node/player/flying", flying, true)
 
 
@@ -887,8 +933,11 @@ func load_file(file: SaveFile) -> void :
     super.preserve_load(file, "player")
 
     _set_camera_pitch(file.get_data("node/player/camera_angle", camera_pitch, false))
-    camera_mode = int(file.get_data("node/player/camera_mode", camera_mode, false))
-    camera_mode = clampi(camera_mode, CAMERA_MODE_FIRST_PERSON, CAMERA_MODE_THIRD_PERSON_FRONT)
+    if _is_client_visual_mod_enabled():
+        camera_mode = int(file.get_data("node/player/camera_mode", camera_mode, false))
+        camera_mode = clampi(camera_mode, CAMERA_MODE_FIRST_PERSON, CAMERA_MODE_THIRD_PERSON_FRONT)
+    else:
+        camera_mode = CAMERA_MODE_FIRST_PERSON
     first_person_zoom_amount = 0.0
     _reset_camera_overhaul_state()
     global_position = file.get_data("node/player/global_position", Vector3(0, 0, 0), false)

@@ -3,6 +3,8 @@ extends Node
 
 var coop_manager
 var coop_native_patch
+var coop_native_multi_region_enabled: bool = false
+var console_manager
 var command_chat_manager
 
 
@@ -44,6 +46,7 @@ var command_chat_manager
 @onready var level_up_menu = get_tree().get_root().get_node("Main/UI/LevelUpMenu")
 @onready var settings_menu = get_tree().get_root().get_node("Main/UI/SettingsMenu")
 @onready var bead_get_menu = get_tree().get_root().get_node("Main/UI/BeadGetMenu")
+@onready var challenge_status_menu = get_tree().get_root().get_node("Main/UI/ChallengeStatusMenu")
 @onready var dither_filter = get_tree().get_root().get_node("Main/UI/%DitheringFilter")
 @onready var shader_loader = get_tree().get_root().get_node("Main/ShaderLoader")
 @onready var splash_layer = get_tree().get_root().get_node("Main/SplashLayer")
@@ -52,12 +55,14 @@ var command_chat_manager
 
 
 func _enter_tree() -> void:
+    _apply_dedicated_render_limits()
     _bootstrap_native_patch()
 
 
 func _ready() -> void:
     print("[lucid-blocks-coop] Ref override loaded")
     call_deferred("_bootstrap_coop")
+    call_deferred("_bootstrap_console")
     call_deferred("_bootstrap_command_chat")
 
 
@@ -102,8 +107,10 @@ func _apply_native_patch_config(config_path: String) -> void:
         return
 
     var enabled: bool = true
+    coop_native_multi_region_enabled = false
     var instance_radius_cap: int = 192
     var render_distance: int = 192
+    var dedicated_boot: bool = _is_dedicated_server_boot_arg()
     if FileAccess.file_exists(config_path):
         var config_file := FileAccess.open(config_path, FileAccess.READ)
         if config_file != null:
@@ -111,11 +118,25 @@ func _apply_native_patch_config(config_path: String) -> void:
             if typeof(parsed) == TYPE_DICTIONARY:
                 var config: Dictionary = parsed
                 enabled = bool(config.get("enabled", enabled))
-                instance_radius_cap = maxi(96, int(config.get("instance_radius_cap", instance_radius_cap)))
-                render_distance = maxi(96, int(config.get("instantiate_chunks_render_distance", render_distance)))
+                coop_native_multi_region_enabled = bool(config.get("multi_region_hooks_enabled", coop_native_multi_region_enabled))
+                instance_radius_cap = int(config.get("instance_radius_cap", instance_radius_cap))
+                render_distance = int(config.get("instantiate_chunks_render_distance", render_distance))
 
     if not enabled:
         return
+
+    var no_render_ok: bool = false
+    if dedicated_boot:
+        var dedicated_no_render: bool = _read_dedicated_bool_arg(["--lb-dedicated-no-render", "--dedicated-no-render"], true)
+        if dedicated_no_render and coop_native_patch.has_method("set_dedicated_no_render_enabled"):
+            no_render_ok = bool(coop_native_patch.call("set_dedicated_no_render_enabled", true))
+        var dedicated_load_radius: int = _read_dedicated_int_arg(["--lb-load-radius", "--load-radius"], 80)
+        var dedicated_render_distance: int = _read_dedicated_int_arg(["--lb-native-render-distance", "--lb-render-distance"], dedicated_load_radius)
+        instance_radius_cap = clampi(dedicated_load_radius, 16, 128)
+        render_distance = clampi(dedicated_render_distance, instance_radius_cap, 128)
+    else:
+        instance_radius_cap = maxi(96, instance_radius_cap)
+        render_distance = maxi(96, render_distance)
 
     render_distance = maxi(render_distance, instance_radius_cap)
     if render_distance % 16 != 0:
@@ -125,12 +146,85 @@ func _apply_native_patch_config(config_path: String) -> void:
         push_error("[lucid-blocks-coop] Loaded native patch extension is missing patch_world_streaming_limits")
         return
 
-    var ok := bool(coop_native_patch.call("patch_world_streaming_limits", instance_radius_cap, render_distance))
-    if ok and coop_native_patch.has_method("install_multi_region_radius_hooks"):
-        var hook_ok := bool(coop_native_patch.call("install_multi_region_radius_hooks"))
-        print("[lucid-blocks-coop] Native multi-region hook install=%s" % str(hook_ok))
+    var status: Variant = coop_native_patch.call("get_status") if coop_native_patch.has_method("get_status") else {}
+    var can_patch_limits: bool = status is Dictionary and bool(status.get("binary_supported", false))
+    var ok: bool = false
+    if can_patch_limits:
+        ok = bool(coop_native_patch.call("patch_world_streaming_limits", instance_radius_cap, render_distance))
+    else:
+        print("[lucid-blocks-coop] Native world streaming limit patch skipped; current gdblocks DLL does not match known resize sites.")
+    var hook_mode: String = "enabled" if coop_native_multi_region_enabled else "disabled"
+    print("[lucid-blocks-coop] Native patch applied=%s hooks=%s no_render=%s cap=%d render_distance=%d" % [str(ok), hook_mode, str(no_render_ok), instance_radius_cap, render_distance])
 
-    print("[lucid-blocks-coop] Native patch applied=%s cap=%d render_distance=%d" % [str(ok), instance_radius_cap, render_distance])
+
+func _apply_dedicated_render_limits() -> void:
+    if not _is_dedicated_server_boot_arg():
+        return
+
+    var buffer_size: int = _read_dedicated_int_arg(["--lb-shader-instance-buffer", "--shader-instance-buffer"], 262144)
+    buffer_size = clampi(buffer_size, 65536, 1048576)
+    ProjectSettings.set_setting("rendering/limits/global_shader_variables/buffer_size", buffer_size)
+    ProjectSettings.set_setting("rendering/limits/global_shader_variables/buffer_size_mobile", buffer_size)
+    print("[lucid-blocks-coop] Dedicated: shader instance buffer_size=%s." % buffer_size)
+
+
+func _is_dedicated_server_boot_arg() -> bool:
+    var args: Array[String] = _get_all_cmdline_args()
+    for raw_arg in args:
+        var arg: String = str(raw_arg).strip_edges()
+        for name in ["--lb-dedicated", "--lucid-dedicated", "--dedicated"]:
+            if arg == name:
+                return true
+            if arg.begins_with("%s=" % name):
+                var value: String = arg.substr(name.length() + 1).strip_edges().to_lower()
+                return not ["0", "false", "no", "off"].has(value)
+    return false
+
+
+func _read_dedicated_int_arg(names: Array[String], default_value: int) -> int:
+    var args: Array[String] = _get_all_cmdline_args()
+    for i in range(args.size()):
+        var arg: String = str(args[i]).strip_edges()
+        for name in names:
+            if arg == name and i + 1 < args.size():
+                var next_arg: String = str(args[i + 1]).strip_edges()
+                if next_arg.is_valid_int():
+                    return int(next_arg)
+            if arg.begins_with("%s=" % name):
+                var value: String = arg.substr(name.length() + 1).strip_edges()
+                if value.is_valid_int():
+                    return int(value)
+    return default_value
+
+
+func _read_dedicated_bool_arg(names: Array[String], default_value: bool) -> bool:
+    var args: Array[String] = _get_all_cmdline_args()
+    for i in range(args.size()):
+        var arg: String = str(args[i]).strip_edges()
+        for name in names:
+            if arg == name:
+                return true
+            if arg.begins_with("%s=" % name):
+                var value: String = arg.substr(name.length() + 1).strip_edges().to_lower()
+                if ["1", "true", "yes", "on"].has(value):
+                    return true
+                if ["0", "false", "no", "off"].has(value):
+                    return false
+            var negative_name: String = name.substr(2) if name.begins_with("--") else name
+            if arg == "--no-%s" % negative_name:
+                return false
+    return default_value
+
+
+func _get_all_cmdline_args() -> Array[String]:
+    var args: Array[String] = []
+    for arg in OS.get_cmdline_args():
+        args.append(str(arg))
+    for arg in OS.get_cmdline_user_args():
+        var user_arg: String = str(arg)
+        if not args.has(user_arg):
+            args.append(user_arg)
+    return args
 
 
 func _bootstrap_command_chat() -> void:
@@ -145,3 +239,17 @@ func _bootstrap_command_chat() -> void:
     command_chat_manager = chat_script.new()
     command_chat_manager.name = "LucidBlocksCommandChat"
     add_child(command_chat_manager)
+
+
+func _bootstrap_console() -> void:
+    if has_node("LucidBlocksConsole"):
+        console_manager = get_node("LucidBlocksConsole")
+        return
+
+    var console_script = load("res://console_mod/console_manager.gd")
+    if console_script == null:
+        return
+
+    console_manager = console_script.new()
+    console_manager.name = "LucidBlocksConsole"
+    add_child(console_manager)

@@ -39,6 +39,9 @@ var coop_original_os_low_processor_mode_set: bool = false
 var coop_original_os_low_processor_mode: bool = false
 var coop_original_os_low_processor_sleep_usec_set: bool = false
 var coop_original_os_low_processor_sleep_usec: int = 0
+var coop_native_hooks_post_load_attempted: bool = false
+var coop_native_multi_region_logged: bool = false
+var dedicated_radius_logged: bool = false
 
 var environment_speed_multiplier: float = 1.0
 
@@ -48,7 +51,12 @@ func _ready() -> void :
     if not Ref.player_fuser.fusion_table_loaded:
         await Ref.player_fuser.fusion_table_done_loading
 
-    set_fusion_table(Ref.player_fuser.fusion_table, Ref.player_fuser.fusion_table_width)
+    if Ref.coop_manager != null \
+        and Ref.coop_manager.has_method("is_dedicated_server_mode") \
+        and bool(Ref.coop_manager.call("is_dedicated_server_mode")):
+        set_fusion_table(PackedInt32Array(), 0)
+    else:
+        set_fusion_table(Ref.player_fuser.fusion_table, Ref.player_fuser.fusion_table_width)
     Ref.save_file_manager.settings_updated.connect(_on_settings_updated)
     Ref.player.get_node("%Curse").delusion_changed.connect(_on_delusion_updated)
     Ref.sky.sky_tint_updated.connect(_on_sky_tint_updated)
@@ -76,10 +84,81 @@ func _on_delusion_updated(new_value: float) -> void :
 
 
 func _on_settings_updated() -> void :
+    if _is_dedicated_server_runtime():
+        instance_radius = _get_dedicated_instance_radius()
+        buffer_instance_radius = _get_dedicated_buffer_radius(instance_radius)
+        if not dedicated_radius_logged:
+            print("[lucid-blocks-coop] Dedicated: world load radius=%s buffer=%s." % [instance_radius, buffer_instance_radius])
+            dedicated_radius_logged = true
+        Ref.world.force_reload()
+        RenderingServer.viewport_set_scaling_3d_scale(get_viewport().get_viewport_rid(), 0.25)
+        _apply_frame_pacing_settings()
+        return
+
     instance_radius = int(Ref.save_file_manager.settings_file.get_data("render_distance", 80.0))
     Ref.world.force_reload()
     RenderingServer.viewport_set_scaling_3d_scale(get_viewport().get_viewport_rid(), Ref.save_file_manager.settings_file.get_data("render_scale", 100) / 100.0)
     _apply_frame_pacing_settings()
+
+
+func _is_dedicated_server_runtime() -> bool:
+    if Ref.coop_manager != null \
+        and Ref.coop_manager.has_method("is_dedicated_server_mode") \
+        and bool(Ref.coop_manager.call("is_dedicated_server_mode")):
+        return true
+
+    var args: Array[String] = []
+    for arg in OS.get_cmdline_args():
+        args.append(str(arg))
+    for arg in OS.get_cmdline_user_args():
+        var user_arg: String = str(arg)
+        if not args.has(user_arg):
+            args.append(user_arg)
+
+    for raw_arg in args:
+        var arg_text: String = str(raw_arg).strip_edges()
+        for name in ["--lb-dedicated", "--lucid-dedicated", "--dedicated"]:
+            if arg_text == name:
+                return true
+            if arg_text.begins_with("%s=" % name):
+                var value: String = arg_text.substr(name.length() + 1).strip_edges().to_lower()
+                return not ["0", "false", "no", "off"].has(value)
+    return false
+
+
+func _get_dedicated_instance_radius() -> int:
+    if Ref.coop_manager != null and Ref.coop_manager.has_method("get_dedicated_load_radius"):
+        return int(Ref.coop_manager.call("get_dedicated_load_radius", 80))
+    return clampi(_read_dedicated_int_arg(["--lb-load-radius", "--load-radius"], 80), 16, 128)
+
+
+func _get_dedicated_buffer_radius(load_radius: int) -> int:
+    if Ref.coop_manager != null and Ref.coop_manager.has_method("get_dedicated_buffer_radius"):
+        return int(Ref.coop_manager.call("get_dedicated_buffer_radius", maxi(load_radius, 80)))
+    return clampi(_read_dedicated_int_arg(["--lb-buffer-radius", "--buffer-radius"], maxi(load_radius, 80)), load_radius, 192)
+
+
+func _read_dedicated_int_arg(names: Array[String], default_value: int) -> int:
+    var args: Array[String] = []
+    for arg in OS.get_cmdline_args():
+        args.append(str(arg))
+    for arg in OS.get_cmdline_user_args():
+        var user_arg: String = str(arg)
+        if not args.has(user_arg):
+            args.append(user_arg)
+
+    for i in range(args.size()):
+        var arg: String = str(args[i]).strip_edges()
+        for name in names:
+            if arg == name and i + 1 < args.size():
+                var next_arg: String = str(args[i + 1]).strip_edges()
+                if next_arg.is_valid_int():
+                    return int(next_arg)
+            if arg.begins_with("%s=" % name):
+                var value: String = arg.substr(name.length() + 1).strip_edges()
+                if value.is_valid_int():
+                    return int(value)
+    return default_value
 
 
 func _is_coop_perf_override_active() -> bool:
@@ -117,6 +196,16 @@ func _should_force_background_dynamic_ticks() -> bool:
 
 func _apply_frame_pacing_settings() -> void:
     coop_perf_override_active = _is_coop_perf_override_active()
+    if Ref.coop_manager != null \
+        and Ref.coop_manager.has_method("is_dedicated_server_mode") \
+        and bool(Ref.coop_manager.call("is_dedicated_server_mode")):
+        _apply_background_cpu_override(true)
+        process_mode = Node.PROCESS_MODE_ALWAYS
+        DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+        fps_cap = maxi(Engine.physics_ticks_per_second, 60)
+        Engine.max_fps = fps_cap
+        return
+
     var background_override_active: bool = _should_force_background_perf_override()
     _apply_background_cpu_override(background_override_active)
     process_mode = Node.PROCESS_MODE_ALWAYS if coop_perf_override_active else Node.PROCESS_MODE_INHERIT
@@ -138,7 +227,11 @@ func refresh_multiplayer_runtime_mode() -> void:
 func _notification(what: int) -> void :
     match what:
         MainLoop.NOTIFICATION_APPLICATION_FOCUS_OUT:
-            if _is_coop_perf_override_active():
+            if Ref.coop_manager != null \
+                and Ref.coop_manager.has_method("is_dedicated_server_mode") \
+                and bool(Ref.coop_manager.call("is_dedicated_server_mode")):
+                _apply_frame_pacing_settings()
+            elif _is_coop_perf_override_active():
                 _apply_frame_pacing_settings()
             else:
                 Engine.max_fps = 15
@@ -153,6 +246,8 @@ func _physics_process(_delta: float) -> void :
         var using_multi_region: bool = _should_use_host_multi_region_loading()
         if using_multi_region and Ref.coop_manager != null:
             var session_positions: Array = Ref.coop_manager.get_same_instance_session_positions()
+            if Ref.coop_manager.has_method("get_active_world_load_ticket_positions"):
+                session_positions.append_array(Ref.coop_manager.call("get_active_world_load_ticket_positions"))
             if session_positions.size() >= 2:
                 _do_multi_region_frame(session_positions)
             else:
@@ -166,9 +261,12 @@ func _physics_process(_delta: float) -> void :
             set_loaded_region_center(load_center)
 
         var pause_blocks_sim: bool = get_tree().paused and not _is_coop_perf_override_active()
-        var allow_dynamic_tick: bool = simulate_frame or _should_force_background_dynamic_ticks()
-        if simulate_enabled and not pause_blocks_sim and allow_dynamic_tick and not (even and Ref.sun.target_time_scale < 1.0):
+        var visual_refresh_tick: bool = coop_dynamic_visual_refresh_frames > 0
+        var allow_dynamic_tick: bool = simulate_frame or _should_force_background_dynamic_ticks() or visual_refresh_tick
+        if (simulate_enabled or visual_refresh_tick) and not pause_blocks_sim and allow_dynamic_tick and not (even and Ref.sun.target_time_scale < 1.0):
             simulate_dynamic()
+            if visual_refresh_tick:
+                coop_dynamic_visual_refresh_frames = maxi(0, coop_dynamic_visual_refresh_frames - 1)
             if not _should_force_background_dynamic_ticks():
                 simulate_frame = false
 
@@ -184,6 +282,16 @@ func _do_multi_region_frame(session_positions: Array) -> void:
 func _ensure_local_player_region_center(session_positions: Array) -> Array:
     var effective_positions: Array = []
     var local_center: Vector3 = Ref.player.global_position
+    if Ref.coop_manager != null \
+        and Ref.coop_manager.has_method("is_dedicated_server_mode") \
+        and bool(Ref.coop_manager.call("is_dedicated_server_mode")):
+        for position in session_positions:
+            if position is Vector3:
+                effective_positions.append(position)
+        if effective_positions.is_empty():
+            effective_positions.append(Ref.coop_manager.get_world_load_center(local_center))
+        return effective_positions
+
     effective_positions.append(local_center)
 
     for position in session_positions:
@@ -275,6 +383,15 @@ func _push_native_multi_region_centers(centers: Array) -> void:
     if Ref.coop_native_patch.has_method("set_active_region_centers"):
         Ref.coop_native_patch.call("set_active_region_centers", centers)
 
+    if not coop_native_multi_region_logged and centers.size() >= 2 and Ref.coop_native_patch.has_method("get_status"):
+        var status: Variant = Ref.coop_native_patch.call("get_status")
+        if status is Dictionary:
+            print("[lucid-blocks-coop] Native multi-region centers active=%d hooks_installed=%s" % [
+                int(status.get("active_region_center_count", centers.size())),
+                str(status.get("multi_region_hooks_installed", false))
+            ])
+            coop_native_multi_region_logged = true
+
 
 func _clear_native_multi_region() -> void:
     session_region_anchor_valid = false
@@ -287,12 +404,15 @@ func _clear_native_multi_region() -> void:
 
 
 func supports_coop_multi_region_loading() -> bool:
+    if not bool(Ref.coop_native_multi_region_enabled):
+        return false
     if Ref.coop_native_patch == null or not Ref.coop_native_patch.has_method("get_status"):
         return false
     var status: Variant = Ref.coop_native_patch.call("get_status")
     if not (status is Dictionary):
         return false
-    return bool(status.get("module_loaded", false)) and bool(status.get("multi_region_hooks_installed", false))
+    return bool(status.get("module_loaded", false)) \
+        and (bool(status.get("multi_region_hooks_installed", false)) or bool(status.get("multi_region_hooks_supported", false)))
 
 
 func uses_coop_multi_region_loading() -> bool:
@@ -300,7 +420,42 @@ func uses_coop_multi_region_loading() -> bool:
 
 
 func _should_use_host_multi_region_loading() -> bool:
-    return false
+    if Ref.coop_manager == null:
+        return false
+    if not Ref.coop_manager.has_method("has_active_session") or not Ref.coop_manager.has_active_session():
+        return false
+    if not multiplayer.is_server():
+        return false
+    return supports_coop_multi_region_loading()
+
+
+func install_coop_multi_region_hooks_after_world_load() -> void:
+    if coop_native_hooks_post_load_attempted:
+        return
+    if not bool(Ref.coop_native_multi_region_enabled):
+        return
+    if Ref.coop_manager == null or not Ref.coop_manager.has_method("has_active_session") or not Ref.coop_manager.has_active_session():
+        return
+    if not multiplayer.is_server():
+        return
+    if Ref.coop_native_patch == null or not Ref.coop_native_patch.has_method("get_status"):
+        return
+
+    var status: Variant = Ref.coop_native_patch.call("get_status")
+    if not (status is Dictionary):
+        return
+    if bool(status.get("multi_region_hooks_installed", false)):
+        coop_native_hooks_post_load_attempted = true
+        print("[lucid-blocks-coop] Native multi-region hooks already installed.")
+        return
+    if not bool(status.get("module_loaded", false)) or not bool(status.get("multi_region_hooks_supported", false)):
+        return
+    if not Ref.coop_native_patch.has_method("install_multi_region_radius_hooks"):
+        return
+
+    coop_native_hooks_post_load_attempted = true
+    var ok: bool = bool(Ref.coop_native_patch.call("install_multi_region_radius_hooks"))
+    print("[lucid-blocks-coop] Native multi-region post-load hook install=%s" % str(ok))
 
 
 func _process(_delta: float) -> void :
@@ -325,10 +480,14 @@ func _on_chunk_loaded(_chunk_position: Vector3i) -> void:
 
 
 func _on_all_loaded() -> void:
+    install_coop_multi_region_hooks_after_world_load()
+
     if not _should_use_host_multi_region_loading() or Ref.coop_manager == null:
         return
 
     var session_positions: Array = Ref.coop_manager.get_same_instance_session_positions()
+    if Ref.coop_manager.has_method("get_active_world_load_ticket_positions"):
+        session_positions.append_array(Ref.coop_manager.call("get_active_world_load_ticket_positions"))
     if session_positions.size() < 2:
         return
 

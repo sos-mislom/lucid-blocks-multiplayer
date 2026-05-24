@@ -173,6 +173,9 @@ Godot logs usually live inside the Proton/Wine profile. Find them with:
 find /opt/lucid-blocks-server -path "*lucid blocks/logs/godot.log" -print
 ```
 
+For status fields, common log markers, and troubleshooting notes, see
+[SERVER_LOGS.md](SERVER_LOGS.md).
+
 ## 7. Server Registry
 
 Players should not have to type IP/port manually. The public client should load a server list from a manifest/registry:

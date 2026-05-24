@@ -54,6 +54,11 @@ var held_item_visual: Node3D
 var placeholder_body: MeshInstance3D
 var placeholder_head_pivot: Node3D
 var placeholder_head: MeshInstance3D
+var placeholder_face: MeshInstance3D
+var placeholder_left_arm: MeshInstance3D
+var placeholder_right_arm: MeshInstance3D
+var placeholder_left_leg: MeshInstance3D
+var placeholder_right_leg: MeshInstance3D
 var placeholder_hand_attachment: Node3D
 var label: Label3D
 
@@ -73,6 +78,8 @@ var crouch_amount: float = 0.0
 var walk_phase: float = 0.0
 var bob_amount: float = 0.0
 var using_imported_avatar: bool = false
+var use_procedural_avatar_animation: bool = false
+var procedural_avatar_bone_map: Dictionary = {}
 var hit_pulse: float = 0.0
 var interact_pulse: float = 0.0
 var action_cycle: float = 0.0
@@ -295,6 +302,8 @@ func _try_build_avatar() -> bool:
     held_item_rebuild_pending = false
     held_item_rebuild_timer = 0.0
     current_runtime_clip = ""
+    use_procedural_avatar_animation = false
+    procedural_avatar_bone_map.clear()
 
     avatar_entry = AvatarRegistry.get_avatar_entry(avatar_id)
     var avatar_path: String = str(avatar_entry.get("path", AVATAR_SCENE))
@@ -330,6 +339,7 @@ func _try_build_avatar() -> bool:
     _force_visible_recursive(avatar_instance)
     _scale_avatar_to_player_height()
     _load_runtime_clips()
+    _configure_avatar_animation_mode()
     _setup_avatar_sounds()
     _rebuild_held_item_visual()
     return true
@@ -430,6 +440,26 @@ func _load_runtime_clips() -> void:
         else:
             clip.loop_mode = Animation.LOOP_NONE
         library.add_animation(clip_name, clip)
+
+
+func _configure_avatar_animation_mode() -> void:
+    var animation_mode: String = str(avatar_entry.get("animation_mode", "")).strip_edges().to_lower()
+    if animation_mode == "procedural_bones":
+        _enable_procedural_avatar_animation()
+        return
+    if avatar_animation_player == null:
+        _enable_procedural_avatar_animation()
+        return
+    if not avatar_animation_player.has_animation("idle") or not avatar_animation_player.has_animation("walk"):
+        _enable_procedural_avatar_animation()
+
+
+func _enable_procedural_avatar_animation() -> void:
+    use_procedural_avatar_animation = true
+    procedural_avatar_bone_map = _build_bone_name_map()
+    if avatar_animation_player != null:
+        avatar_animation_player.stop()
+    print("[avatar] using procedural bone animation for %s" % str(avatar_entry.get("id", avatar_id)))
 
 
 func _extract_mixamo_animation(path: String) -> Animation:
@@ -640,9 +670,63 @@ func _play_clip(clip_name: String, speed_ratio: float) -> void:
 func _update_avatar_animation(speed_ratio: float) -> void:
     if avatar_instance == null:
         return
+    if use_procedural_avatar_animation:
+        _update_procedural_avatar_pose(speed_ratio)
+        return
     var desired_clip: String = _choose_clip(speed_ratio)
     _play_clip(desired_clip, speed_ratio)
     _play_avatar_action_sound(desired_clip)
+
+
+func _update_procedural_avatar_pose(speed_ratio: float) -> void:
+    if avatar_skeleton == null:
+        return
+
+    var blend: float = 0.22
+    var stride: float = sin(walk_phase)
+    var stride_back: float = cos(walk_phase)
+    var move_amount: float = clampf(speed_ratio, 0.0, 1.0)
+    var crouch: float = crouch_amount
+    var pitch: float = clampf(target_pitch, deg_to_rad(-45.0), deg_to_rad(45.0))
+    var action_reach: float = maxf(hit_pulse, interact_pulse)
+    if target_action_state == ACTION_HIT_SUSTAIN or target_action_state == ACTION_INTERACT_SUSTAIN:
+        action_reach = maxf(action_reach, 0.45 + 0.35 * sin(action_cycle))
+
+    var arm_swing: float = 0.58 * move_amount
+    var leg_swing: float = 0.52 * move_amount
+    var crouch_arm: float = 0.18 * crouch
+    var crouch_leg: float = 0.34 * crouch
+    var jump_lift: float = 0.0 if target_grounded else 0.38
+
+    _set_avatar_bone_rotation("mixamorig_Hips", Vector3(deg_to_rad(-7.0) * crouch, 0.0, 0.0), blend)
+    _set_avatar_bone_rotation("mixamorig_Spine", Vector3(deg_to_rad(5.0) * crouch + pitch * 0.10, 0.0, 0.0), blend)
+    _set_avatar_bone_rotation("mixamorig_Spine1", Vector3(pitch * 0.16, 0.0, 0.0), blend)
+    _set_avatar_bone_rotation("mixamorig_Neck", Vector3(pitch * 0.22, 0.0, 0.0), blend)
+    _set_avatar_bone_rotation("mixamorig_Head", Vector3(pitch * 0.45, 0.0, 0.0), blend)
+
+    _set_avatar_bone_rotation("mixamorig_LeftArm", Vector3(stride * arm_swing - crouch_arm + jump_lift * 0.3, 0.0, deg_to_rad(-5.0)), blend)
+    _set_avatar_bone_rotation("mixamorig_RightArm", Vector3(-stride * arm_swing - crouch_arm - action_reach * 0.95 + jump_lift * 0.3, 0.0, deg_to_rad(5.0)), blend)
+    _set_avatar_bone_rotation("mixamorig_LeftForeArm", Vector3(deg_to_rad(-8.0) - absf(stride_back) * 0.12, 0.0, 0.0), blend)
+    _set_avatar_bone_rotation("mixamorig_RightForeArm", Vector3(deg_to_rad(-8.0) - action_reach * 0.45 - absf(stride_back) * 0.12, 0.0, 0.0), blend)
+
+    _set_avatar_bone_rotation("mixamorig_LeftUpLeg", Vector3(-stride * leg_swing + crouch_leg - jump_lift, 0.0, 0.0), blend)
+    _set_avatar_bone_rotation("mixamorig_RightUpLeg", Vector3(stride * leg_swing + crouch_leg - jump_lift, 0.0, 0.0), blend)
+    _set_avatar_bone_rotation("mixamorig_LeftLeg", Vector3(absf(stride) * 0.20 + crouch_leg + jump_lift * 0.7, 0.0, 0.0), blend)
+    _set_avatar_bone_rotation("mixamorig_RightLeg", Vector3(absf(stride) * 0.20 + crouch_leg + jump_lift * 0.7, 0.0, 0.0), blend)
+    _set_avatar_bone_rotation("mixamorig_LeftFoot", Vector3(-crouch * 0.12, 0.0, 0.0), blend)
+    _set_avatar_bone_rotation("mixamorig_RightFoot", Vector3(-crouch * 0.12, 0.0, 0.0), blend)
+
+
+func _set_avatar_bone_rotation(mixamo_name: String, euler: Vector3, blend: float) -> void:
+    if avatar_skeleton == null:
+        return
+    var bone_name: String = str(procedural_avatar_bone_map.get(mixamo_name, mixamo_name))
+    var bone_idx: int = avatar_skeleton.find_bone(bone_name)
+    if bone_idx == -1:
+        return
+    var target_rotation: Quaternion = Quaternion.from_euler(euler)
+    var current_rotation: Quaternion = avatar_skeleton.get_bone_pose_rotation(bone_idx)
+    avatar_skeleton.set_bone_pose_rotation(bone_idx, current_rotation.slerp(target_rotation, clampf(blend, 0.0, 1.0)))
 
 
 func _setup_avatar_sounds() -> void:
@@ -881,28 +965,45 @@ func _transform_aabb(source_aabb: AABB, transform: Transform3D) -> AABB:
 
 func _build_placeholder() -> void:
     placeholder_body = MeshInstance3D.new()
-    var body := CapsuleMesh.new()
-    body.radius = 0.18
-    body.mid_height = 0.7
+    placeholder_body.name = "PlaceholderTorso"
+    var body := BoxMesh.new()
+    body.size = Vector3(0.42, 0.72, 0.26)
     placeholder_body.mesh = body
-    placeholder_body.position = Vector3(0.0, 0.52, 0.0)
+    placeholder_body.position = Vector3(0.0, 0.98, 0.0)
     visual_root.add_child(placeholder_body)
 
     placeholder_head_pivot = Node3D.new()
-    placeholder_head_pivot.position = Vector3(0.0, 0.92, 0.0)
+    placeholder_head_pivot.position = Vector3(0.0, 1.38, 0.0)
     visual_root.add_child(placeholder_head_pivot)
 
     placeholder_head = MeshInstance3D.new()
-    var head := SphereMesh.new()
-    head.radius = 0.2
-    head.height = 0.4
+    placeholder_head.name = "PlaceholderHead"
+    var head := BoxMesh.new()
+    head.size = Vector3(0.34, 0.34, 0.34)
     placeholder_head.mesh = head
     placeholder_head.position = Vector3(0.0, 0.2, 0.0)
     placeholder_head_pivot.add_child(placeholder_head)
 
+    placeholder_face = MeshInstance3D.new()
+    placeholder_face.name = "PlaceholderFace"
+    var face := BoxMesh.new()
+    face.size = Vector3(0.16, 0.06, 0.012)
+    placeholder_face.mesh = face
+    placeholder_face.position = Vector3(0.0, 0.23, -0.176)
+    placeholder_head_pivot.add_child(placeholder_face)
+
+    placeholder_left_arm = _make_placeholder_limb("PlaceholderLeftArm", Vector3(0.14, 0.58, 0.14), Vector3(-0.34, 0.96, 0.0))
+    placeholder_right_arm = _make_placeholder_limb("PlaceholderRightArm", Vector3(0.14, 0.58, 0.14), Vector3(0.34, 0.96, 0.0))
+    placeholder_left_leg = _make_placeholder_limb("PlaceholderLeftLeg", Vector3(0.16, 0.72, 0.16), Vector3(-0.12, 0.36, 0.0))
+    placeholder_right_leg = _make_placeholder_limb("PlaceholderRightLeg", Vector3(0.16, 0.72, 0.16), Vector3(0.12, 0.36, 0.0))
+    visual_root.add_child(placeholder_left_arm)
+    visual_root.add_child(placeholder_right_arm)
+    visual_root.add_child(placeholder_left_leg)
+    visual_root.add_child(placeholder_right_leg)
+
     placeholder_hand_attachment = Node3D.new()
     placeholder_hand_attachment.name = "PlaceholderHeldItemAttachment"
-    placeholder_hand_attachment.position = Vector3(0.24, 0.6, -0.03)
+    placeholder_hand_attachment.position = Vector3(0.43, 0.74, -0.08)
     placeholder_hand_attachment.rotation_degrees = Vector3(18.0, -20.0, -72.0)
     visual_root.add_child(placeholder_hand_attachment)
 
@@ -910,24 +1011,87 @@ func _build_placeholder() -> void:
     _rebuild_held_item_visual()
 
 
+func _make_placeholder_limb(node_name: String, size: Vector3, position: Vector3) -> MeshInstance3D:
+    var limb := MeshInstance3D.new()
+    limb.name = node_name
+    var mesh := BoxMesh.new()
+    mesh.size = size
+    limb.mesh = mesh
+    limb.position = position
+    return limb
+
+
 func _update_placeholder_pose(blend: float) -> void:
+    var speed_ratio: float = clampf(target_move_speed / MAX_ANIMATED_SPEED, 0.0, 1.0)
+    var stride: float = sin(walk_phase) * speed_ratio
+    var action_reach: float = maxf(hit_pulse, interact_pulse)
+    if placeholder_body != null:
+        placeholder_body.position = placeholder_body.position.lerp(Vector3(0.0, 0.98 - 0.13 * crouch_amount, 0.0), blend)
+        placeholder_body.scale = placeholder_body.scale.lerp(Vector3(1.0, 1.0 - 0.16 * crouch_amount, 1.0 + 0.08 * crouch_amount), blend)
     if placeholder_head_pivot != null:
-        placeholder_head_pivot.position = Vector3(0.0, 0.92 - 0.06 * crouch_amount, 0.0)
+        placeholder_head_pivot.position = placeholder_head_pivot.position.lerp(Vector3(0.0, 1.38 - 0.2 * crouch_amount, -0.03 * crouch_amount), blend)
         var placeholder_pitch_rad: float = deg_to_rad(clampf(rad_to_deg(target_pitch), -28.0, 28.0))
         placeholder_head_pivot.rotation.x = lerpf(placeholder_head_pivot.rotation.x, placeholder_pitch_rad * 0.7, blend)
+    if placeholder_left_arm != null:
+        placeholder_left_arm.position = placeholder_left_arm.position.lerp(Vector3(-0.34, 0.96 - 0.12 * crouch_amount, 0.0), blend)
+        placeholder_left_arm.rotation.x = lerpf(placeholder_left_arm.rotation.x, stride * 0.38, blend)
+        placeholder_left_arm.rotation.z = lerpf(placeholder_left_arm.rotation.z, deg_to_rad(-7.0), blend)
+    if placeholder_right_arm != null:
+        placeholder_right_arm.position = placeholder_right_arm.position.lerp(Vector3(0.34, 0.96 - 0.12 * crouch_amount, -0.03 * action_reach), blend)
+        placeholder_right_arm.rotation.x = lerpf(placeholder_right_arm.rotation.x, -stride * 0.38 - action_reach * 0.75, blend)
+        placeholder_right_arm.rotation.z = lerpf(placeholder_right_arm.rotation.z, deg_to_rad(7.0), blend)
+    if placeholder_left_leg != null:
+        placeholder_left_leg.position = placeholder_left_leg.position.lerp(Vector3(-0.12, 0.36 - 0.06 * crouch_amount, 0.02 * crouch_amount), blend)
+        placeholder_left_leg.scale = placeholder_left_leg.scale.lerp(Vector3(1.0, 1.0 - 0.22 * crouch_amount, 1.0), blend)
+        placeholder_left_leg.rotation.x = lerpf(placeholder_left_leg.rotation.x, -stride * 0.25, blend)
+    if placeholder_right_leg != null:
+        placeholder_right_leg.position = placeholder_right_leg.position.lerp(Vector3(0.12, 0.36 - 0.06 * crouch_amount, 0.02 * crouch_amount), blend)
+        placeholder_right_leg.scale = placeholder_right_leg.scale.lerp(Vector3(1.0, 1.0 - 0.22 * crouch_amount, 1.0), blend)
+        placeholder_right_leg.rotation.x = lerpf(placeholder_right_leg.rotation.x, stride * 0.25, blend)
     if placeholder_hand_attachment != null:
-        placeholder_hand_attachment.position = Vector3(0.24, 0.6 - 0.07 * crouch_amount, -0.03)
+        placeholder_hand_attachment.position = Vector3(0.43, 0.74 - 0.12 * crouch_amount, -0.08 - 0.09 * action_reach)
         placeholder_hand_attachment.rotation_degrees = Vector3(18.0 + 12.0 * hit_pulse, -20.0, -72.0 + 8.0 * sin(walk_phase))
 
 
 func _apply_placeholder_palette() -> void:
+    if _normalize_avatar_id(avatar_id) == DEFAULT_AVATAR_ID:
+        var default_color := Color.WHITE
+        var face_color := Color(0.06, 0.07, 0.08)
+        if placeholder_body != null:
+            placeholder_body.material_override = _make_color_material(default_color)
+        if placeholder_head != null:
+            placeholder_head.material_override = _make_color_material(default_color)
+        if placeholder_face != null:
+            placeholder_face.material_override = _make_color_material(face_color)
+        if placeholder_left_arm != null:
+            placeholder_left_arm.material_override = _make_color_material(default_color)
+        if placeholder_right_arm != null:
+            placeholder_right_arm.material_override = _make_color_material(default_color)
+        if placeholder_left_leg != null:
+            placeholder_left_leg.material_override = _make_color_material(default_color)
+        if placeholder_right_leg != null:
+            placeholder_right_leg.material_override = _make_color_material(default_color)
+        return
+
     var hue: float = fposmod(float(peer_id) * 0.17, 1.0)
     var body_color := Color.from_hsv(hue, 0.45, 0.95)
     var head_color := Color.from_hsv(hue, 0.15, 0.92)
+    var limb_color := Color.from_hsv(hue, 0.36, 0.86)
+    var face_color := Color(0.06, 0.07, 0.08)
     if placeholder_body != null:
         placeholder_body.material_override = _make_color_material(body_color)
     if placeholder_head != null:
         placeholder_head.material_override = _make_color_material(head_color)
+    if placeholder_face != null:
+        placeholder_face.material_override = _make_color_material(face_color)
+    if placeholder_left_arm != null:
+        placeholder_left_arm.material_override = _make_color_material(limb_color)
+    if placeholder_right_arm != null:
+        placeholder_right_arm.material_override = _make_color_material(limb_color)
+    if placeholder_left_leg != null:
+        placeholder_left_leg.material_override = _make_color_material(limb_color.darkened(0.12))
+    if placeholder_right_leg != null:
+        placeholder_right_leg.material_override = _make_color_material(limb_color.darkened(0.12))
 
 
 # ---------------------------------------------------------------------------
