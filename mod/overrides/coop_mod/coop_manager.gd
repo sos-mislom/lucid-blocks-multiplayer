@@ -9575,6 +9575,21 @@ func _run_host_dirty_chunk_flush() -> void:
     print("[lucid-blocks-coop] Dedicated dirty chunk flush finished in %d ms." % (Time.get_ticks_msec() - started_msec))
 
 
+func _flush_dedicated_dirty_chunks_before_snapshot(reason: String = "snapshot") -> void:
+    if not dedicated_server_enabled or not multiplayer.is_server() or server_dirty_chunk_keys.is_empty():
+        return
+    var deadline_msec: int = Time.get_ticks_msec() + 5000
+    while autosave_in_progress and Time.get_ticks_msec() < deadline_msec:
+        await get_tree().process_frame
+    if autosave_in_progress or server_dirty_chunk_keys.is_empty():
+        return
+    print("[lucid-blocks-coop] Dedicated dirty chunk flush requested before %s dirty_chunks=%d" % [
+        reason,
+        server_dirty_chunk_keys.size(),
+    ])
+    await _run_host_dirty_chunk_flush()
+
+
 func _capture_local_state() -> Dictionary:
     var state: Dictionary = {
         "active": false,
@@ -12193,7 +12208,40 @@ func _finish_guest_character_restore() -> void:
         _set_reconnect_overlay_visible(false)
         status_message = "Joined host world"
         _update_status_text()
+        _force_local_guest_gameplay_unlock("persistent_restore")
     _send_persistent_state_to_host(true)
+
+
+func _force_local_guest_gameplay_unlock(reason: String = "") -> void:
+    if multiplayer.is_server():
+        return
+    if get_tree() != null:
+        get_tree().paused = false
+    if is_instance_valid(Ref.player):
+        Ref.player.dead = false
+        Ref.player.disabled = false
+        Ref.player.movement_enabled = true
+        Ref.player.set_process(true)
+        Ref.player.set_physics_process(true)
+        Ref.player.set_process_input(true)
+        Ref.player.set_process_unhandled_input(true)
+        Ref.player.make_invincible_temporary()
+    call_deferred("_recapture_mouse_for_guest_gameplay", reason)
+
+
+func _recapture_mouse_for_guest_gameplay(reason: String = "") -> void:
+    if multiplayer.is_server() or not _has_live_peer() or not guest_persistent_ready:
+        return
+    if not is_instance_valid(Ref.main) or not Ref.main.loaded:
+        return
+    MouseHandler.capture()
+    print("[lucid-blocks-coop] guest gameplay unlocked reason=%s disabled=%s movement=%s captured=%s full=%s" % [
+        reason,
+        str(Ref.player.disabled if is_instance_valid(Ref.player) else true),
+        str(Ref.player.movement_enabled if is_instance_valid(Ref.player) else false),
+        str(MouseHandler.captured),
+        str(MouseHandler.fully_captured),
+    ])
 
 
 func _watch_guest_character_restore_timeout() -> void:
@@ -15124,6 +15172,8 @@ func _on_peer_disconnected(id: int) -> void:
     var disconnected_state: Dictionary = peer_states.get(id, {})
     if multiplayer.is_server() and not disconnected_state.is_empty():
         _store_guest_exit_position_from_peer_state(id, disconnected_state)
+        if dedicated_server_enabled:
+            _flush_dedicated_dirty_chunks_before_snapshot.call_deferred("peer_disconnect")
     peer_states.erase(id)
     server_world_edit_selections.erase(id)
     _clear_host_interest_cache_for_peer(id)
@@ -15641,11 +15691,13 @@ func _send_world_snapshot_to_peer(peer_id: int, target_dimension: int = -1, targ
         return
 
     _persist_current_owned_pocket_variants_if_needed()
+    await _flush_dedicated_dirty_chunks_before_snapshot("world_snapshot")
     status_message = "Sending world to peer %s" % peer_id
     _update_status_text()
 
     # Do not force a full save here; it stalls join badly.
-    # We snapshot the current in-memory loaded world/register state instead.
+    # We snapshot the current loaded world/register state; dedicated dirty
+    # chunks are flushed above so reconnects do not see stale save data.
 
     var register_data: Dictionary = Ref.save_file_manager.loaded_file_register.data.duplicate_deep()
     var actual_dimension: int = target_dimension if target_dimension >= 0 else int(Ref.world.current_dimension)
