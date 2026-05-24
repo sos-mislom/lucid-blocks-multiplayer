@@ -4996,6 +4996,31 @@ func _sanitize_network_save_data(value: Variant, depth: int = 0) -> Variant:
     return value
 
 
+func _estimate_network_value_size(value: Variant, depth: int = 0) -> int:
+    if depth > 16:
+        return 0
+    if value is Dictionary:
+        var total: int = 2
+        for key in (value as Dictionary).keys():
+            total += str(key).length()
+            total += _estimate_network_value_size((value as Dictionary)[key], depth + 1)
+            if total > CLIENT_SAFE_MAX_SNAPSHOT_DECOMPRESSED_BYTES:
+                return total
+        return total
+    if value is Array:
+        var array_total: int = 2
+        for item in (value as Array):
+            array_total += _estimate_network_value_size(item, depth + 1)
+            if array_total > CLIENT_SAFE_MAX_SNAPSHOT_DECOMPRESSED_BYTES:
+                return array_total
+        return array_total
+    if value is PackedByteArray:
+        return (value as PackedByteArray).size()
+    if value is PackedInt32Array:
+        return (value as PackedInt32Array).size() * 4
+    return str(value).length()
+
+
 func _is_syncable_entity_node(node: Node) -> bool:
     return node is Entity and not (node is Player) and not is_remote_player_proxy(node)
 
@@ -12373,7 +12398,7 @@ func _ensure_guest_playable_position_after_restore() -> void:
 
 
 func _watch_guest_character_restore_timeout() -> void:
-    await get_tree().create_timer(CLIENT_GUEST_RESTORE_TIMEOUT_SEC, false).timeout
+    await get_tree().create_timer(CLIENT_GUEST_RESTORE_TIMEOUT_SEC, true).timeout
     if multiplayer.is_server() or not _has_live_peer():
         return
     if not client_restore_in_progress or guest_persistent_ready or receiving_host_world:
@@ -12384,14 +12409,14 @@ func _watch_guest_character_restore_timeout() -> void:
     _finish_guest_character_restore()
 
 
-func _apply_received_guest_state(save_data: Dictionary) -> void:
+func _apply_received_guest_state(save_data: Dictionary) -> bool:
     if save_data.is_empty() or not _can_sample_player():
-        return
+        return false
 
     _clear_local_downed_state()
     var temp_file := SaveFile.new()
     temp_file.data = save_data.duplicate_deep()
-    print("[lucid-blocks-coop] applying guest persistent state bytes=%s" % JSON.stringify(save_data).length())
+    print("[lucid-blocks-coop] applying guest persistent state approx_bytes=%s" % _estimate_network_value_size(save_data))
     Ref.player.load_file(temp_file)
     print("[lucid-blocks-coop] guest persistent state applied pos=%s" % str(Ref.player.global_position))
     _focus_client_world_loading_on_player()
@@ -12399,6 +12424,7 @@ func _apply_received_guest_state(save_data: Dictionary) -> void:
     Ref.player.disabled = false
     Ref.player.make_invincible_temporary()
     _finish_guest_character_restore()
+    return true
 
 
 func _initialize_new_guest_profile() -> void:
@@ -19225,16 +19251,24 @@ func receive_guest_persistent_state(save_data: Dictionary) -> void:
     if multiplayer.is_server():
         return
     _mark_host_contact()
-    print("[lucid-blocks-coop] received guest persistent state empty=%s" % str(save_data.is_empty()))
+    var approx_bytes: int = _estimate_network_value_size(save_data)
+    print("[lucid-blocks-coop] received guest persistent state empty=%s approx_bytes=%s" % [str(save_data.is_empty()), approx_bytes])
     if save_data.is_empty():
         _initialize_new_guest_profile()
     else:
-        if JSON.stringify(save_data).length() > CLIENT_SAFE_MAX_SNAPSHOT_DECOMPRESSED_BYTES:
+        if approx_bytes > CLIENT_SAFE_MAX_SNAPSHOT_DECOMPRESSED_BYTES:
+            print("[lucid-blocks-coop] guest persistent state rejected: too large")
+            _finish_guest_character_restore()
             return
         var sanitized: Variant = _sanitize_network_save_data(save_data)
         if sanitized is Dictionary:
             var sanitized_data: Dictionary = sanitized
-            _apply_received_guest_state(sanitized_data)
+            if not _apply_received_guest_state(sanitized_data):
+                print("[lucid-blocks-coop] guest persistent state fallback: apply unavailable")
+                _finish_guest_character_restore()
+        else:
+            print("[lucid-blocks-coop] guest persistent state rejected: sanitize failed")
+            _finish_guest_character_restore()
 
 
 @rpc("any_peer", "call_remote", "reliable")
