@@ -89,12 +89,12 @@ git diff --check
 
 ## Публикация
 
-Перед первым push:
+Перед первым push/release:
 
-1. Проверь [docs/GITHUB_PUBLISHING.md](docs/GITHUB_PUBLISHING.md).
-2. Не публикуй `deploy.txt`, `.env`, пароли, токены, приватные IP/порты и локальные логи.
-3. Оставь атрибуцию в [CREDITS.md](CREDITS.md).
-4. Не выдавай оригинальный co-op mod за свой: upstream - `parkers0405/lucid-blocks-coop`, автор Parker Settle / Mr_Settle.
+1. Не публикуй `deploy.txt`, `.env`, пароли, токены, приватные IP/порты и локальные логи.
+2. Оставь атрибуцию в [CREDITS.md](CREDITS.md).
+3. Не выдавай оригинальный co-op mod за свой: upstream - `parkers0405/lucid-blocks-coop`, автор Parker Settle / Mr_Settle.
+4. Запусти `scripts/check_release_hygiene.ps1` и `git diff --check`.
 
 ## Статус
 

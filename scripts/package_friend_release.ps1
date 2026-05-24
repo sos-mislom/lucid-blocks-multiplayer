@@ -51,10 +51,8 @@ try {
     Add-ZipEntry -Source (Join-Path $RootDir "docs\LINUX_SERVER_RU.md") -EntryName "LINUX_SERVER_RU.md"
     Add-ZipEntry -Source (Join-Path $RootDir "docs\LINUX_SERVER_EN.md") -EntryName "LINUX_SERVER_EN.md"
     Add-ZipEntry -Source (Join-Path $RootDir "docs\SERVER_REGISTRY.md") -EntryName "SERVER_REGISTRY.md"
-    Add-ZipEntry -Source (Join-Path $RootDir "docs\DEPLOY_LINUX_DEDICATED.md") -EntryName "DEPLOY_LINUX_DEDICATED.md"
-    Add-ZipEntry -Source (Join-Path $RootDir "docs\assets\chat-overlay.svg") -EntryName "images\chat-overlay.svg"
-    Add-ZipEntry -Source (Join-Path $RootDir "docs\assets\dedicated-flow.svg") -EntryName "images\dedicated-flow.svg"
-    Add-ZipEntry -Source (Join-Path $RootDir "docs\assets\server-browser.svg") -EntryName "images\server-browser.svg"
+    Add-ZipEntry -Source (Join-Path $RootDir "docs\SERVER_LOGS.md") -EntryName "SERVER_LOGS.md"
+    Add-ZipEntry -Source (Join-Path $RootDir "docs\ARCHITECTURE.md") -EntryName "ARCHITECTURE.md"
 
     $screenshotsDir = Join-Path $RootDir "docs\assets\screenshots"
     if (Test-Path $screenshotsDir) {

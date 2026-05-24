@@ -193,8 +193,7 @@ function New-SanitizedMultiplayerProject {
         "avatar_normalizer.gd",
         "avatar_normalizer.gd.uid",
         "locomotion_library.res",
-        "mixamo_bone_map.tres",
-        "open_animation_libraries_README.md"
+        "mixamo_bone_map.tres"
     )
 
     $robocopyExe = Join-Path $env:SystemRoot "System32\robocopy.exe"

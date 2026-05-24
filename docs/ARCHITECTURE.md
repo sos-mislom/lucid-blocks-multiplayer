@@ -16,7 +16,9 @@ multiplayer flow:
   through singleplayer by accident.
 
 This is still a Godot mod layered over the existing game. It is not a clean
-native rewrite of Lucid Blocks networking or world streaming.
+native rewrite of Lucid Blocks networking or world streaming. The native
+multi-region C++ rewrite remains future work; the current repository keeps the
+implemented hook/fallback path rather than a long source-level patch draft.
 
 ## Network Transports
 

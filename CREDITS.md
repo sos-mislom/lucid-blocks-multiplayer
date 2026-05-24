@@ -25,8 +25,9 @@ Keep upstream license files and attribution files with every public release.
 - Mixamo Animation Retargeter for Godot is bundled under
   `mod/overrides/addons/mixamo_animation_retargeter`. Preserve its README and
   notices.
-- Animation workflow notes reference Godot4 Mixamo/Open Animation Libraries under
-  `coop_mod/animation_workflow`.
+- Animation workflow resources may reference Godot4 Mixamo/Open Animation
+  Libraries and Mixamo-compatible retargeting workflows. Do not ship animation
+  libraries or character assets publicly unless their licenses are clear.
 - Default remote avatar:
   - Asset: Low Poly Character
   - Author: Alihan / Dare0
@@ -41,4 +42,3 @@ Fan/test avatars or character assets such as Pim, Charlie, and Mr. Frog should
 not be shipped as part of the public core package unless their rights are cleared.
 If kept for private testing, they should be moved to a separate private addon or
 removed from public release archives.
-

@@ -16,7 +16,9 @@ legal copy of Lucid Blocks and is not affiliated with the game developers.
 - `lucid-blocks-chat.pck` - standalone in-game chat UI.
 - `lucid-blocks-console.pck` - singleplayer/LAN command console work on top of chat.
 
-The current source still contains some historical overlap. See [MOD_SPLIT.md](MOD_SPLIT.md) for the split plan and release boundaries.
+The current source still contains some historical overlap: `mod/overrides` is
+the multiplayer source, `mod/chat_overrides` is the standalone chat pack, and
+`mod/console_overrides` is the standalone console/debug pack.
 
 ## Current MVP
 
@@ -264,16 +266,25 @@ Friend install guide:
 
 ## Roadmap
 
-The living roadmap is [SERVER_ROADMAP.md](SERVER_ROADMAP.md).
+The public roadmap is [ROADMAP.md](ROADMAP.md).
 
 ## GitHub Publishing
-
-Before publishing, read [docs/GITHUB_PUBLISHING.md](docs/GITHUB_PUBLISHING.md).
 
 Do not publish private deployment files, passwords, IPs, ports, Steam credentials, or server config.
 
 Generated folders such as `.godot/`, `logs/`, `backups/`, `__pycache__/`,
 native build caches, and temporary `dist/.tmp-*` files should stay out of Git.
+
+Before release, run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+.\scripts\check_release_hygiene.ps1
+git diff --check
+```
+
+Keep attribution in [CREDITS.md](CREDITS.md) and do not ship fan/test avatar
+assets in public packages unless their rights are cleared.
 
 ## License / Assets
 
