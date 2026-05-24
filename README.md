@@ -84,9 +84,15 @@ Full technical notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 - Game session: Godot high-level multiplayer RPC over ENet/UDP.
 - Protocol identity: `lucid-blocks-coop`, version `1`, minimum compatible `1`.
+- Compatibility is based on protocol/min-compatible values and feature gates,
+  not on exact client build, PCK hash, or cosmetic UI version.
 - Dedicated health/status: small UDP endpoint returning JSON.
 - Server browser registry: local JSON plus optional HTTP/HTTPS remote registry.
 - Steam lobbies: legacy invite/discovery path, not the dedicated server model.
+
+You need to redeploy the VPS package when server authority, RPC payloads,
+persistence, or protocol features change. Client-only UI, screenshots, README
+changes and other cosmetic fixes should not require a dedicated server deploy.
 
 ### Server Authority And Security
 

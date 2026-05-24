@@ -21,6 +21,8 @@ const SERVER_AUTHORITATIVE_WORLD: bool = true
 const COOP_PROTOCOL_NAME: String = "lucid-blocks-coop"
 const COOP_PROTOCOL_VERSION: int = 1
 const COOP_PROTOCOL_MIN_COMPATIBLE: int = 1
+const COOP_PROTOCOL_FEATURES: Array = []
+const COOP_PROTOCOL_REQUIRED_FEATURES: Array = []
 const SERVER_BROWSER_CARD_WIDTH: float = 300.0
 const SERVER_BROWSER_CARD_HEIGHT: float = 64.0
 const SERVER_BROWSER_TIMEOUT_MSEC: int = 8000
@@ -1304,6 +1306,8 @@ func _get_dedicated_status_thread_payload() -> Dictionary:
         "coop_protocol": COOP_PROTOCOL_NAME,
         "coop_protocol_version": COOP_PROTOCOL_VERSION,
         "coop_protocol_min": COOP_PROTOCOL_MIN_COMPATIBLE,
+        "coop_protocol_features": COOP_PROTOCOL_FEATURES,
+        "coop_protocol_required_features": COOP_PROTOCOL_REQUIRED_FEATURES,
         "ok": ready,
         "status": phase,
         "ready": ready,
@@ -1337,6 +1341,8 @@ func _get_dedicated_status_payload() -> Dictionary:
         "coop_protocol": COOP_PROTOCOL_NAME,
         "coop_protocol_version": COOP_PROTOCOL_VERSION,
         "coop_protocol_min": COOP_PROTOCOL_MIN_COMPATIBLE,
+        "coop_protocol_features": COOP_PROTOCOL_FEATURES,
+        "coop_protocol_required_features": COOP_PROTOCOL_REQUIRED_FEATURES,
         "ok": ready,
         "status": phase,
         "ready": ready,
@@ -2236,6 +2242,8 @@ func _format_server_browser_presence_text(entry: Dictionary) -> String:
 		return "CHECKING"
 	if status == "relay":
 		return "RELAY"
+	if status == "incompatible":
+		return "UPDATE"
 	if status == "offline":
 		return "OFFLINE"
 	return "IDLE"
@@ -2259,6 +2267,8 @@ func _format_server_browser_detail_line(entry: Dictionary) -> String:
 		return "WAITING  %s" % region_text.substr(0, 3).to_upper()
 	if status == "relay":
 		return "WAITING"
+	if status == "incompatible":
+		return "PROTOCOL"
 	if status == "offline":
 		return region_text.substr(0, 3).to_upper()
 	return region_text.substr(0, 3).to_upper()
@@ -4268,7 +4278,18 @@ func _apply_server_browser_status(index: int, data: Dictionary) -> void:
         return
     var entry: Dictionary = server_browser_entries[index]
     var remote_status: String = str(data.get("status", "")).strip_edges().to_lower()
-    if bool(data.get("ok", false)):
+    var protocol_info: Dictionary = _get_coop_protocol_info_from_status(data)
+    var has_protocol_info: bool = not protocol_info.is_empty()
+    if has_protocol_info:
+        entry["coop_protocol"] = str(protocol_info.get("protocol", ""))
+        entry["coop_protocol_version"] = int(protocol_info.get("version", 0))
+        entry["coop_protocol_min"] = int(protocol_info.get("min", 0))
+        entry["coop_protocol_features"] = protocol_info.get("features", [])
+        entry["coop_protocol_required_features"] = protocol_info.get("required_features", [])
+    if bool(data.get("ok", false)) and has_protocol_info and not _is_coop_protocol_compatible(protocol_info):
+        entry["status"] = "incompatible"
+        entry["message"] = "Server protocol is incompatible"
+    elif bool(data.get("ok", false)):
         entry["status"] = "online"
         entry["message"] = str(data.get("message", "Server online"))
     elif remote_status == "starting" or remote_status == "waiting_main" or remote_status == "waiting_world" or remote_status == "loading_world" or remote_status == "starting_host" or remote_status == "replaying_journal":
@@ -4339,6 +4360,11 @@ func _join_main_menu_server_index(index: int) -> void:
 func _join_main_menu_server_entry(entry: Dictionary) -> void:
     if entry.is_empty():
         status_message = "Server is not available"
+        _update_status_text()
+        _refresh_main_menu_coop_status()
+        return
+    if str(entry.get("status", "")).strip_edges().to_lower() == "incompatible":
+        status_message = "Server protocol is incompatible"
         _update_status_text()
         _refresh_main_menu_coop_status()
         return
@@ -14745,8 +14771,52 @@ func _get_coop_protocol_info() -> Dictionary:
         "protocol": COOP_PROTOCOL_NAME,
         "version": COOP_PROTOCOL_VERSION,
         "min": COOP_PROTOCOL_MIN_COMPATIBLE,
+        "features": COOP_PROTOCOL_FEATURES,
+        "required_features": COOP_PROTOCOL_REQUIRED_FEATURES,
         "game_version": str(ProjectSettings.get("application/config/version")),
     }
+
+
+func _get_coop_protocol_info_from_status(data: Dictionary) -> Dictionary:
+    if not data.has("coop_protocol") and not data.has("coop_protocol_version") and not data.has("coop_protocol_min"):
+        return {}
+    var remote_version: int = int(data.get("coop_protocol_version", 0))
+    return {
+        "protocol": str(data.get("coop_protocol", "")),
+        "version": remote_version,
+        "min": int(data.get("coop_protocol_min", remote_version)),
+        "features": data.get("coop_protocol_features", []),
+        "required_features": data.get("coop_protocol_required_features", []),
+        "game_version": str(data.get("version", "")),
+    }
+
+
+func _protocol_feature_list(value: Variant) -> Array:
+    var result: Array = []
+    if value is Array:
+        for item in value:
+            var feature: String = str(item).strip_edges()
+            if feature != "" and not result.has(feature):
+                result.append(feature)
+    return result
+
+
+func _has_protocol_features(available_value: Variant, required_value: Variant) -> bool:
+    var available: Array = _protocol_feature_list(available_value)
+    for feature in _protocol_feature_list(required_value):
+        if not available.has(feature):
+            return false
+    return true
+
+
+func _format_protocol_features(value: Variant) -> String:
+    var features: Array = _protocol_feature_list(value)
+    if features.is_empty():
+        return "-"
+    var parts: PackedStringArray = PackedStringArray()
+    for feature in features:
+        parts.append(str(feature))
+    return ",".join(parts)
 
 
 func _is_coop_protocol_compatible(remote_info: Dictionary) -> bool:
@@ -14754,15 +14824,21 @@ func _is_coop_protocol_compatible(remote_info: Dictionary) -> bool:
         return false
     var remote_version: int = int(remote_info.get("version", 0))
     var remote_min: int = int(remote_info.get("min", remote_version))
-    return remote_version >= COOP_PROTOCOL_MIN_COMPATIBLE and COOP_PROTOCOL_VERSION >= remote_min
+    if remote_version < COOP_PROTOCOL_MIN_COMPATIBLE or COOP_PROTOCOL_VERSION < remote_min:
+        return false
+    if not _has_protocol_features(COOP_PROTOCOL_FEATURES, remote_info.get("required_features", [])):
+        return false
+    if not _has_protocol_features(remote_info.get("features", []), COOP_PROTOCOL_REQUIRED_FEATURES):
+        return false
+    return true
 
 
 func _format_coop_protocol_info(info: Dictionary) -> String:
-    return "%s v%s min%s game%s" % [
+    return "%s p%s min%s features[%s]" % [
         str(info.get("protocol", "unknown")),
         int(info.get("version", 0)),
         int(info.get("min", 0)),
-        str(info.get("game_version", "?")),
+        _format_protocol_features(info.get("features", [])),
     ]
 
 

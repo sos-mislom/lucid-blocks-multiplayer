@@ -34,6 +34,10 @@ COOP_PROTOCOL_MIN_COMPATIBLE = 1
 
 Compatibility should be handled through protocol/min-compatible checks and
 feature gates, not by requiring every client build hash to match exactly.
+The game/mod build version may be shown in diagnostics, but it must not be used
+as a hard join gate. Cosmetic client patches should remain compatible with an
+already deployed dedicated server unless the protocol contract or required
+feature set changes.
 
 Steam lobbies are treated as a discovery/invite path for legacy co-op flows.
 Dedicated server play should use named server entries from the server browser.
