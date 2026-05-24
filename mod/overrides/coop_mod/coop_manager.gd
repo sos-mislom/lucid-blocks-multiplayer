@@ -21,9 +21,10 @@ const SERVER_AUTHORITATIVE_WORLD: bool = true
 const COOP_PROTOCOL_NAME: String = "lucid-blocks-coop"
 const COOP_PROTOCOL_VERSION: int = 1
 const COOP_PROTOCOL_MIN_COMPATIBLE: int = 1
-const SERVER_BROWSER_CARD_WIDTH: float = 900.0
+const SERVER_BROWSER_CARD_WIDTH: float = 300.0
 const SERVER_BROWSER_CARD_HEIGHT: float = 64.0
 const SERVER_BROWSER_TIMEOUT_MSEC: int = 8000
+const SERVER_CONNECT_TIMEOUT_MSEC: int = 12000
 const SERVER_REGISTRY_CACHE_TTL_SEC: int = 15 * 60
 const SERVER_REGISTRY_HEARTBEAT_INTERVAL_SEC: float = 30.0
 const DEFAULT_PUBLIC_SERVERS: Array = []
@@ -270,6 +271,7 @@ var reconnect_steam_host_id: int = 0
 var join_protocol_pending: bool = false
 var join_protocol_accepted: bool = false
 var join_protocol_deadline_msec: int = 0
+var client_connection_deadline_msec: int = 0
 
 var peer_states: Dictionary = {}
 var markers: Dictionary = {}
@@ -2480,8 +2482,8 @@ func _make_qualia_card_background_texture(entry: Dictionary) -> Texture2D:
 
 func _setup_qualia_card_button(button: Button, entry: Dictionary, min_height: float) -> void:
     button.text = ""
-    button.custom_minimum_size = Vector2(0.0, min_height)
-    button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    button.custom_minimum_size = Vector2(SERVER_BROWSER_CARD_WIDTH, min_height)
+    button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
     button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
     button.focus_mode = Control.FOCUS_ALL
     button.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -3336,7 +3338,7 @@ func _build_main_menu_tab_button(sample_button: Button, text: String, tab_name: 
 	_copy_pause_menu_button_style(sample_button, button)
 	button.text = text
 	button.toggle_mode = true
-    button.custom_minimum_size = Vector2(0.0, max(24.0, minf(sample_button.custom_minimum_size.y, 30.0)))
+    button.custom_minimum_size = Vector2(140.0, max(24.0, minf(sample_button.custom_minimum_size.y, 30.0)))
     _apply_qualia_tab_button_style(button)
 	button.pressed.connect(_set_main_menu_coop_tab.bind(tab_name))
 	return button
@@ -3560,7 +3562,7 @@ func _build_main_menu_coop_panel(sample_button: Button) -> Control:
     main_menu_servers_page.add_child(main_menu_server_cards_scroll)
 
     main_menu_server_cards_container = VBoxContainer.new()
-    main_menu_server_cards_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    main_menu_server_cards_container.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
     main_menu_server_cards_container.add_theme_constant_override("separation", 3)
     main_menu_server_cards_scroll.add_child(main_menu_server_cards_container)
 
@@ -3828,6 +3830,10 @@ func _normalize_server_browser_entry(raw_entry: Dictionary) -> Dictionary:
     entry["players"] = int(entry.get("players", 0))
     entry["max_players"] = int(entry.get("max_players", MAX_CLIENTS))
     entry["message"] = str(entry.get("message", ""))
+    entry["allow_status_endpoint_update"] = bool(entry.get(
+        "allow_status_endpoint_update",
+        raw_entry.has("endpoint_key") or raw_entry.has("status_port") or raw_entry.has("game_port")
+    ))
     var file_color_1: Variant = entry.get("file_color_1", Color.from_hsv(0.58, 0.32, 0.95))
     var file_color_2: Variant = entry.get("file_color_2", Color.from_hsv(0.09, 0.62, 0.8))
     entry["file_color_1"] = file_color_1 if file_color_1 is Color else Color.from_hsv(0.58, 0.32, 0.95)
@@ -4343,6 +4349,12 @@ func _join_main_menu_server_entry(entry: Dictionary) -> void:
     _save_config()
     _sync_inputs_from_config()
     status_message = "Joining %s" % str(entry.get("name", config["address"]))
+    print("[lucid-blocks-coop] selected browser server name=%s port=%s status_port=%s status=%s" % [
+        str(entry.get("name", "Server")),
+        int(entry.get("port", DEFAULT_PORT)),
+        int(entry.get("status_port", DEFAULT_PORT + DEFAULT_STATUS_PORT_OFFSET)),
+        str(entry.get("status", "unknown")),
+    ])
     _close_main_menu_coop_panel()
     join_session(false)
 
@@ -4999,6 +5011,7 @@ func _tick_server_dirty_chunk_flush(delta: float) -> void:
 func _has_coop_runtime_work() -> bool:
     return dedicated_server_enabled \
         or _has_live_peer() \
+        or _has_pending_peer_connection() \
         or reconnect_pending \
         or receiving_host_world \
         or client_restore_in_progress \
@@ -5061,6 +5074,7 @@ func _physics_process(delta: float) -> void:
     _tick_dedicated_registry_heartbeat(delta)
     _tick_server_browser_udp(delta)
     _tick_server_only_save_menu_filter(delta)
+    _tick_client_connection_timeout()
     _tick_join_protocol_timeout()
     _enforce_coop_pause_override()
     _sync_pause_menu_coop_panel_visibility()
@@ -5274,7 +5288,7 @@ func _refresh_overlay_layout() -> void:
         )
 
     if main_menu_coop_shell != null:
-        var coop_width: float = clampf(340.0, 300.0, maxf(300.0, viewport_size.x - 96.0))
+        var coop_width: float = clampf(340.0, 320.0, maxf(320.0, viewport_size.x - 96.0))
         var coop_height: float = clampf(300.0, 240.0, maxf(240.0, viewport_size.y - 96.0))
         main_menu_coop_shell.custom_minimum_size = Vector2(coop_width, coop_height)
         main_menu_coop_shell.offset_left = -coop_width * 0.5
@@ -5360,6 +5374,7 @@ func join_session(apply_ui_config: bool = true) -> void:
     reconnect_retry_timer = 0.0
     _set_reconnect_overlay_visible(false)
     var peer: ENetMultiplayerPeer = ENetMultiplayerPeer.new()
+    print("[lucid-blocks-coop] joining ENet server address=%s port=%s" % [address, port])
 	var err: Error = peer.create_client(address, port)
 	if err != OK:
 		_display_connection_status("Join failed before connecting (%s)" % err, true)
@@ -5367,6 +5382,7 @@ func join_session(apply_ui_config: bool = true) -> void:
 		return
 
 	multiplayer.multiplayer_peer = peer
+    client_connection_deadline_msec = Time.get_ticks_msec() + SERVER_CONNECT_TIMEOUT_MSEC
     peer_states.clear()
 	active_session_transport = SESSION_TRANSPORT_LAN
 	_install_player_death_hook()
@@ -14750,6 +14766,12 @@ func _reset_join_protocol_state() -> void:
     join_protocol_pending = false
     join_protocol_accepted = false
     join_protocol_deadline_msec = 0
+    client_connection_deadline_msec = 0
+
+
+func _has_pending_peer_connection() -> bool:
+    return multiplayer.multiplayer_peer != null \
+        and multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTING
 
 
 func _request_join_protocol_check() -> void:
@@ -14771,6 +14793,28 @@ func _tick_join_protocol_timeout() -> void:
     join_protocol_accepted = true
     _display_connection_status("Server did not answer protocol check; trying legacy join...", true)
     request_host_world_snapshot.rpc_id(1)
+
+
+func _tick_client_connection_timeout() -> void:
+    if client_connection_deadline_msec <= 0:
+        return
+    if multiplayer.multiplayer_peer == null:
+        client_connection_deadline_msec = 0
+        return
+    var status: int = multiplayer.multiplayer_peer.get_connection_status()
+    if status == MultiplayerPeer.CONNECTION_CONNECTED:
+        client_connection_deadline_msec = 0
+        return
+    if status == MultiplayerPeer.CONNECTION_DISCONNECTED:
+        client_connection_deadline_msec = 0
+        disconnect_session(false)
+        _display_connection_status("Connection failed: server closed connection", true)
+        return
+    if Time.get_ticks_msec() < client_connection_deadline_msec:
+        return
+    client_connection_deadline_msec = 0
+    disconnect_session(false)
+    _display_connection_status("Connection failed: ENet timeout", true)
 
 
 func _reject_peer_after_protocol_mismatch(peer_id: int) -> void:
@@ -14862,6 +14906,7 @@ func _on_peer_disconnected(id: int) -> void:
 
 
 func _on_connected_to_server() -> void:
+    client_connection_deadline_msec = 0
     guest_persistent_ready = false
     _install_player_death_hook()
     _install_game_menu_quit_hook()
@@ -14872,6 +14917,7 @@ func _on_connected_to_server() -> void:
 
 
 func _on_connection_failed() -> void:
+    client_connection_deadline_msec = 0
     if reconnect_pending:
         disconnect_session(false)
         client_restore_in_progress = true
@@ -14924,6 +14970,7 @@ func _on_local_game_quit() -> void:
 
 
 func _on_server_disconnected() -> void:
+    client_connection_deadline_msec = 0
     if local_quit_in_progress:
         disconnect_session(false)
         _display_connection_status("Server disconnected", true)
