@@ -10,6 +10,34 @@ if ([string]::IsNullOrWhiteSpace($RootDir)) {
 
 $failures = New-Object System.Collections.Generic.List[string]
 
+foreach ($sensitivePattern in @("deploy.txt", "deploy*.txt", ".env", ".env.*")) {
+    $matches = & git -C $RootDir ls-files -- $sensitivePattern 2>$null
+    foreach ($match in $matches) {
+        if (-not [string]::IsNullOrWhiteSpace($match)) {
+            $failures.Add("Sensitive file is tracked by git and must not be uploaded: $match")
+        }
+    }
+}
+
+$distDir = Join-Path $RootDir "dist"
+if (Test-Path -LiteralPath $distDir) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    Get-ChildItem -LiteralPath $distDir -File -Filter "*.zip" -ErrorAction SilentlyContinue | ForEach-Object {
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($_.FullName)
+        try {
+            foreach ($entry in $zip.Entries) {
+                $entryName = $entry.FullName.Replace("\", "/")
+                $leaf = [IO.Path]::GetFileName($entryName)
+                if ($leaf -like "deploy*.txt" -or $leaf -like ".env*") {
+                    $failures.Add("Sensitive file is present in release archive $($_.Name): $entryName")
+                }
+            }
+        } finally {
+            $zip.Dispose()
+        }
+    }
+}
+
 function Read-RepoText {
     param([string]$RelativePath)
     $path = Join-Path $RootDir $RelativePath
