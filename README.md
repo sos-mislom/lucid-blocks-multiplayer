@@ -45,7 +45,6 @@ This is an experimental MVP, not a polished official multiplayer release.
 - Time/weather authority, entity behavior and mob/drop reconciliation still need more multiplayer testing.
 - Large public servers are not the target yet. The current tuning is for small private servers.
 - The native world loader is still fundamentally a single-center system; the mod adds player/action chunk tickets and an optional native hook as a compatibility layer.
-- Debug/fan avatar assets in the source tree are not cleared as public core-release content unless their attribution says otherwise.
 
 ## Screenshots
 
@@ -176,24 +175,6 @@ Linux/macOS shell:
 ```bash
 GODOT_EXPORT_BIN=/path/to/Godot_v4.6-stable_linux.x86_64 ./scripts/build_release_packs.sh
 ```
-
-## Before Making The Repository Public
-
-Run:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-.\scripts\check_release_hygiene.ps1
-git diff --check
-git status --short
-```
-
-Public checklist:
-
-- No `deploy.txt`, `.env`, passwords, tokens, private IPs/ports or local logs.
-- Keep [CREDITS.md](CREDITS.md).
-- Do not claim the original co-op mod as original work.
-- Use real screenshots from `docs/assets/screenshots`, not mockups.
 
 ## Attribution
 
