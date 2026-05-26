@@ -21,9 +21,9 @@ enum {IDLE, WALK, CHASE}
 var player
 var state: int = IDLE
 var anger: float = 0.0
-var bothersome_entities: Array[Entity]
-var bothersome: Entity
-var attacker: Entity
+var bothersome_entities: Array
+var bothersome
+var attacker
 
 
 var interest_place: Vector3
@@ -64,6 +64,8 @@ func _on_body_entered_attack(body: Node3D) -> void :
     if state != CHASE or dead or disabled:
         return
     if body == self:
+        return
+    if not (body is Entity or is_session_player_entity(body)):
         return
     if Vector3(movement_velocity.x, 0, movement_velocity.z).length() > min_attack_speed:
         %Attack.attack(body, body.global_position, 48.0, 1.2)
@@ -131,7 +133,7 @@ func update_bothersome_target() -> void :
         bothersome = bothersome_entities.pick_random()
 
 
-func _on_attacked(new_attacker: Entity) -> void :
+func _on_attacked(new_attacker) -> void :
     if is_instance_valid(new_attacker):
         bothersome = new_attacker
         anger += attack_anger

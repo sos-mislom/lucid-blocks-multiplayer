@@ -365,6 +365,8 @@ func _on_attack_timeout() -> void:
 func _on_attack_entered(body: PhysicsBody3D) -> void:
     if dead or state != CHASE:
         return
+    if not (body is Entity or _is_session_player_entity(body)):
+        return
     var locked_target = _get_forced_session_target()
     if is_instance_valid(locked_target) and body != locked_target:
         _debug_log("ignore attack-enter body=%s locked=%s" % [
@@ -373,7 +375,7 @@ func _on_attack_entered(body: PhysicsBody3D) -> void:
         ])
         return
 
-    attack_target = body as Entity
+    attack_target = body
     _debug_log("attack-enter target=%s" % _debug_target_label(attack_target))
     attack()
 

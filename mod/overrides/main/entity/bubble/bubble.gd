@@ -16,7 +16,7 @@ enum {IDLE, TARGET_CHASE, }
 
 var state: int
 var wing_rotation: float = 0.0
-var target: Entity
+var target
 var target_velocity: Vector3
 var time: float
 
@@ -93,7 +93,9 @@ func _on_shoot_timeout() -> void :
         held_item.interact_end()
 
     if entity_ray.is_colliding():
-        var entity: Entity = entity_ray.get_collider() as Entity
+        var entity = entity_ray.get_collider()
+        if not (entity is Entity or is_session_player_entity(entity)):
+            return
         if not is_instance_valid(entity):
             return
         if not entity == target:
@@ -120,10 +122,12 @@ func get_look_direction() -> Vector3:
 
 
 func get_target() -> void :
-    var closest_entity: Entity = null
+    var closest_entity = null
     for i in range(entity_detect.get_collision_count()):
         var object: Object = entity_detect.get_collider(i)
-        var entity: Entity = object.owner
+        var entity = object.owner if object is Area3D else object
+        if not (entity is Entity or is_session_player_entity(entity)):
+            continue
         if not is_instance_valid(entity) or entity.dead or entity.disabled or entity is Bubble or entity is Hamsa or entity is Ofanim:
             continue
         if not is_instance_valid(closest_entity):

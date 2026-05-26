@@ -102,8 +102,12 @@ func _ready() -> void:
 func _on_area_entered_attack(area: Area3D) -> void:
     if not arm_hitbox or dead or disabled or not is_instance_valid(area) or not is_instance_valid(area.owner) or not is_inside_tree() or not has_node("%ArmTarget"):
         return
-    var entity: Entity = area.owner as Entity
-    if not is_instance_valid(entity) or entity == self or entity.disabled or entity.dead or entity.direct_damage_cooldown:
+    var entity = area.owner
+    if not is_instance_valid(entity) or entity == self:
+        return
+    if not (entity is Entity or is_session_player_entity(entity)):
+        return
+    if entity.disabled or entity.dead or entity.direct_damage_cooldown:
         return
 
     var horizontal_kb: Vector3 = entity.global_position - %ArmTarget.global_position
@@ -111,21 +115,26 @@ func _on_area_entered_attack(area: Area3D) -> void:
     horizontal_kb = horizontal_kb.normalized()
 
     var actual_damage: int = int(arm_damage)
+    var target_jump_modifier: float = float(entity.jump_modifier) if "jump_modifier" in entity else 1.0
+    var target_head_position: Vector3 = entity.head.global_position if "head" in entity and is_instance_valid(entity.head) else entity.global_position + Vector3(0.0, 1.45, 0.0)
     var knockback_delta: Vector3 = 0.45 * arm_movement_velocity + horizontal_kb * arm_knockback_strength
-    knockback_delta.y += arm_knockback_strength * entity.jump_modifier * (0.5 if not entity.is_on_floor() else 1.0)
-    if Ref.coop_manager != null and Ref.coop_manager.sync_host_direct_hit_on_remote_player(self, entity, entity.head.global_position, actual_damage, knockback_delta):
+    knockback_delta.y += arm_knockback_strength * target_jump_modifier * (0.5 if not entity.is_on_floor() else 1.0)
+    var is_remote_player_target: bool = Ref.coop_manager != null and Ref.coop_manager.is_remote_player_proxy(entity)
+    if Ref.coop_manager != null and Ref.coop_manager.sync_host_direct_hit_on_remote_player(self, entity, target_head_position, actual_damage, knockback_delta):
         %AttackCooldown.start()
+        return
+    if is_remote_player_target:
         return
 
     entity.knockback_velocity += knockback_delta
     entity.attacked(self, actual_damage)
 
-    if entity.held_item != null and entity.held_item.item is Tool:
+    if "held_item" in entity and entity.held_item != null and entity.held_item.item is Tool:
         entity.decrease_held_item_durability(1)
 
     if entity.has_node("%Bleed"):
         var target_to_attacker: Vector3 = (global_position - entity.global_position).normalized()
-        entity.get_node("%Bleed").bleed(entity.head.global_position, target_to_attacker, actual_damage)
+        entity.get_node("%Bleed").bleed(target_head_position, target_to_attacker, actual_damage)
 
     %AttackCooldown.start()
 

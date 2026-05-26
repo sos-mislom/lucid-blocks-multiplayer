@@ -34,7 +34,7 @@ var spin_speed: float = 1.0
 
 var exploded: bool = false
 var player
-var attack_target: Entity
+var attack_target
 var state: int = IDLE
 var anger: float = 0.0:
     set(val):
@@ -103,7 +103,7 @@ func _on_attack_frame() -> void :
     %Attack.attack(attack_target, global_position, 24.0)
 
 
-func _on_attacked(attacker: Entity) -> void :
+func _on_attacked(attacker) -> void :
     if is_instance_valid(attacker):
         attack_target = attacker
         anger += attack_anger

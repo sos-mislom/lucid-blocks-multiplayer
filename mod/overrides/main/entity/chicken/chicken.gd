@@ -21,10 +21,10 @@ var will_jump: bool = false
 var desired_direction: Vector3
 var desired_angle: float
 var last_source_position: Vector3
-var panic_source: Entity
+var panic_source
 
-var follow_entities: Array[Entity]
-var follow: Entity
+var follow_entities: Array
+var follow
 var follow_position: Vector3
 var follow_offset: Vector3
 var leader: bool
@@ -198,7 +198,7 @@ func _on_damage_taken(_damage: int) -> void :
     %StateTimer.start(get_time(panic_time))
 
 
-func _on_attacked(attacker: Entity) -> void :
+func _on_attacked(attacker) -> void :
     if state == PANIC:
         return
 

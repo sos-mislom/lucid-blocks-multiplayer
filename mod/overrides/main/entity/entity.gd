@@ -125,8 +125,8 @@ signal head_water_exited(vertical_velocity: float)
 signal feet_water_entered(vertical_velocity: float)
 signal feet_water_exited(vertical_velocity: float)
 signal hit_ground(vertical_velocity: float)
-signal on_attacked(attacker: Entity)
-signal on_healed(healer: Entity)
+signal on_attacked(attacker)
+signal on_healed(healer)
 signal damage_taken(damage: int)
 signal held_item_index_changed
 signal modulate_changed(new_modulate: Color)
@@ -278,7 +278,7 @@ var gravity_modifier: float:
     get():
         return biome_gravity_modifier * water_gravity_modifier * static_gravity_modifier * glider_gravity_modifier
 
-var last_attacker: Entity
+var last_attacker
 
 var has_endure: bool = false
 
@@ -536,7 +536,7 @@ func check_fire() -> void :
 
 
 
-func attacked(attacker: Entity, damage: int) -> void :
+func attacked(attacker, damage: int) -> void :
     if dead or disabled:
         return
 

@@ -32,7 +32,7 @@ func _ready() -> void :
     on_attacked.connect(_on_attacked)
 
 
-func _on_attacked(_attacker: Entity) -> void :
+func _on_attacked(_attacker) -> void :
     jerk += Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)).normalized()
 
 

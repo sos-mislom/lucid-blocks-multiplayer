@@ -16,8 +16,8 @@ class_name Gel extends Entity
 @onready var target_area: Area3D = %TargetArea3D
 @onready var attack_area: Area3D = %AttackArea3D
 
-var bothersome_entities: Array[Entity]
-var bothersome: Entity
+var bothersome_entities: Array
+var bothersome
 var last_position: Vector3
 var last_softbody_position: Vector3
 var approximate_velocity: Vector3
@@ -48,6 +48,8 @@ func _ready() -> void :
 
 
 func _on_body_entered_attack_area(body: Node3D) -> void :
+    if not (body is Entity or is_session_player_entity(body)):
+        return
     if dead or disabled or not is_instance_valid(body) or body is Gel or body.dead:
         return
     if approximate_velocity.length() < 4.0:
@@ -178,7 +180,7 @@ func _on_alpha_changed(new_alpha: float) -> void :
     softbody.set_instance_shader_parameter("fade", new_alpha)
 
 
-func attacked(attacker: Entity, damage: int) -> void :
+func attacked(attacker, damage: int) -> void :
     if dead or disabled or softbody.process_mode == PROCESS_MODE_DISABLED:
         return
 

@@ -8,7 +8,7 @@ signal shoot_frame
 @export var awaken_chance: float = 0.5
 
 var state: int = IDLE
-var chase_target: Entity
+var chase_target
 var brain_flow: float = 0.0
 
 
@@ -31,13 +31,13 @@ func _on_body_entered_attack(body: Node3D) -> void :
     if body == self or dead or state == CHASE or disabled:
         return
 
-    if state == IDLE and body is Entity and randf() < awaken_chance:
+    if state == IDLE and (body is Entity or _is_session_player_entity(body)) and randf() < awaken_chance:
         state = CHASE
         chase_target = body
         initialize_state()
 
 
-func _on_attacked(attacker: Entity) -> void :
+func _on_attacked(attacker) -> void :
     if state != CHASE:
         chase_target = attacker
         state = CHASE

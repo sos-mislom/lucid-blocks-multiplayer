@@ -16,7 +16,7 @@ var will_jump: bool = false
 var desired_direction: Vector3
 var desired_angle: float
 var last_source_position: Vector3
-var panic_source: Entity
+var panic_source
 
 
 func _ready() -> void :
@@ -121,7 +121,7 @@ func _on_damage_taken(_damage: int) -> void :
     %StateTimer.start(get_time(panic_time))
 
 
-func _on_attacked(attacker: Entity) -> void :
+func _on_attacked(attacker) -> void :
     if attacker == Ref.player:
         Ref.plot_manager.set_plot_data("bubblebear_hits", Ref.plot_manager.get_plot_data("bubblebear_hits", 0) + 1)
     if state == PANIC:

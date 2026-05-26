@@ -67,7 +67,7 @@ func _on_state_timeout() -> void :
         initialize_state()
 
 
-func _on_attacked(_attacker: Entity) -> void :
+func _on_attacked(_attacker) -> void :
     if state == IDLE:
         state = LOCATE
         initialize_state()

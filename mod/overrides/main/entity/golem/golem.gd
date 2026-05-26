@@ -163,7 +163,7 @@ func _get_priority_attack_target(preferred_target = null):
 
 func _on_entity_entered(entity: Node3D) -> void:
     flush_deleted_entities()
-    if not (entity is Entity):
+    if not (entity is Entity or _is_session_player_entity(entity)):
         return
     if nearby_entities.size() >= nearby_entity_count:
         return

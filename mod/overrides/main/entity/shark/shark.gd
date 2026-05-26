@@ -81,7 +81,11 @@ func attack_entities() -> void :
         var area: Area3D = attack_shape.get_collider(i)
         if not is_instance_valid(area):
             continue
-        var entity: Entity = area.owner
-        if entity == self or not is_instance_valid(entity) or entity.dead or entity.disabled:
+        var entity = area.owner
+        if entity == self or not is_instance_valid(entity):
+            continue
+        if not (entity is Entity or is_session_player_entity(entity)):
+            continue
+        if entity.dead or entity.disabled:
             continue
         %Attack.attack(entity, hand.global_position, 24.0, 0.25)

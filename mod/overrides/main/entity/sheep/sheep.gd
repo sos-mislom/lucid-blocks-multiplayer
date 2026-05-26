@@ -15,7 +15,7 @@ var will_jump: bool = false
 var desired_direction: Vector3 = Vector3()
 var desired_angle: float = 0
 var last_source_position: Vector3
-var panic_source: Entity
+var panic_source
 
 
 func _ready() -> void :
@@ -115,7 +115,7 @@ func _on_damage_taken(_damage: int) -> void :
     %Timer.start(get_time(panic_time))
 
 
-func _on_attacked(attacker: Entity) -> void :
+func _on_attacked(attacker) -> void :
     if state == PANIC:
         return
 
