@@ -4083,7 +4083,7 @@ func _find_server_browser_entry_index(source_ip: String, source_port: int) -> in
 func _apply_server_browser_status(index: int, data: Dictionary) -> void:
     if index < 0 or index >= server_browser_entries.size():
         return
-    server_browser_entries[index] = CoopServerBrowserUI.apply_status_to_entry(
+    var entry: Dictionary = CoopServerBrowserUI.apply_status_to_entry(
         server_browser_entries[index],
         data,
         Callable(self, "_get_coop_protocol_info_from_status"),
@@ -4092,6 +4092,7 @@ func _apply_server_browser_status(index: int, data: Dictionary) -> void:
         DEFAULT_PORT,
         DEFAULT_STATUS_PORT_OFFSET,
     )
+    server_browser_entries[index] = entry
     server_browser_pending.erase("%s:%s" % [str(entry.get("address", "")), int(entry.get("status_port", DEFAULT_PORT + DEFAULT_STATUS_PORT_OFFSET))])
     _refresh_server_browser_entries()
 
