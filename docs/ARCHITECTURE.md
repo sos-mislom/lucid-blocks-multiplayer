@@ -204,6 +204,15 @@ Target topology (phase by phase):
                              The `@rpc` handlers and engine side effects stay on
                              `coop_manager.gd`; the mutable state now lives in
                              `mod/overrides/coop_mod/coop_client_session_runtime.gd`.
+- `CoopSnapshotReceiveRuntime`
+                           — stateful host-world snapshot receive buffer:
+                             register JSON, expected chunk count, received
+                             compressed chunks, host spawn position, and
+                             follow-position flag.
+                             Snapshot RPC handlers, payload safety validation,
+                             save sanitization and `Ref.main.enter_game()` stay
+                             on `coop_manager.gd`; the mutable buffer lives in
+                             `mod/overrides/coop_mod/coop_snapshot_receive_runtime.gd`.
 - `CoopIO`                — atomic file IO, bounded dicts, primitive validators.
                             **Phase 1 complete** (`mod/overrides/coop_mod/coop_io.gd`).
 - `CoopJournal`            — chunk journal append/replay/compact, applied-seq.

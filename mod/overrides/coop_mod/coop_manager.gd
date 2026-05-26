@@ -3,6 +3,7 @@ extends Node
 
 const AvatarRegistry = preload("res://coop_mod/avatar_registry.gd")
 const CoopClientSessionRuntimeScript = preload("res://coop_mod/coop_client_session_runtime.gd")
+const CoopSnapshotReceiveRuntimeScript = preload("res://coop_mod/coop_snapshot_receive_runtime.gd")
 const RemotePlayerMarkerScript = preload("res://coop_mod/remote_player_marker.gd")
 const CONFIG_PATH: String = "user://lucid_blocks_coop_config.json"
 const SERVER_REGISTRY_PATH: String = "user://lucid_blocks_server_registry.json"
@@ -300,11 +301,7 @@ var server_only_save_menu_filter_timer: float = 0.0
 var status_message: String = "Idle"
 var panel_visible: bool = false
 var restore_capture_on_close: bool = false
-var incoming_snapshot_register_json: String = ""
-var incoming_snapshot_chunk_count: int = 0
-var incoming_snapshot_chunks: Dictionary = {}
-var incoming_snapshot_host_position: Vector3 = Vector3.ZERO
-var incoming_snapshot_follow_host_position: bool = false
+var snapshot_receive_runtime = CoopSnapshotReceiveRuntimeScript.new()
 var remote_break_outlines: Dictionary = {}
 var synced_entities: Dictionary = {}
 var client_entity_dummies: Dictionary = {}
@@ -1447,7 +1444,7 @@ func _get_server_runtime_metrics() -> Dictionary:
         + client_pending_block_actions.size() \
         + client_pending_item_actions.size() \
         + pending_guest_world_patch_flush_acks.size() \
-        + incoming_snapshot_chunks.size() \
+        + snapshot_receive_runtime.received_count() \
         + server_recent_block_action_results.size() \
         + server_recent_item_action_results.size()
 
@@ -5452,11 +5449,7 @@ func disconnect_session(announce: bool = true) -> void:
     remote_host_respawning = false
     client_session_runtime.receiving_host_world = false
     client_session_runtime.client_restore_in_progress = false
-    incoming_snapshot_register_json = ""
-    incoming_snapshot_chunk_count = 0
-    incoming_snapshot_chunks.clear()
-    incoming_snapshot_host_position = Vector3.ZERO
-    incoming_snapshot_follow_host_position = false
+    snapshot_receive_runtime.clear()
     last_received_host_snapshot_sequence = -1
     _set_death_overlay_visible(false)
     if is_instance_valid(Ref.player):
@@ -15413,17 +15406,17 @@ func _resolve_dedicated_snapshot_spawn_position(dimension: int, fallback_positio
 
 
 func _apply_received_host_world() -> void:
-    if incoming_snapshot_register_json == "":
+    if not snapshot_receive_runtime.has_register():
         client_session_runtime.receiving_host_world = false
         return
-    print("[lucid-blocks-coop] Applying host world snapshot chunks=%s/%s" % [incoming_snapshot_chunks.size(), incoming_snapshot_chunk_count])
+    print("[lucid-blocks-coop] Applying host world snapshot chunks=%s/%s" % [snapshot_receive_runtime.received_count(), snapshot_receive_runtime.chunk_count])
 
-    var completeness: Dictionary = CoopWorldSnapshot.validate_snapshot_chunks_complete(incoming_snapshot_chunks, incoming_snapshot_chunk_count)
+    var completeness: Dictionary = CoopWorldSnapshot.validate_snapshot_chunks_complete(snapshot_receive_runtime.chunks, snapshot_receive_runtime.chunk_count)
     if not bool(completeness.get("complete", false)):
         _handle_host_world_snapshot_failure("Missing world chunk %s" % int(completeness.get("missing_index", -1)))
         return
 
-    var compressed_buffer: PackedByteArray = CoopWorldSnapshot.concat_snapshot_chunks(incoming_snapshot_chunks, incoming_snapshot_chunk_count)
+    var compressed_buffer: PackedByteArray = CoopWorldSnapshot.concat_snapshot_chunks(snapshot_receive_runtime.chunks, snapshot_receive_runtime.chunk_count)
 
     if not CoopWorldSnapshot.is_snapshot_compressed_size_within_limit(compressed_buffer.size(), CLIENT_SAFE_MAX_SNAPSHOT_COMPRESSED_BYTES):
         _handle_host_world_snapshot_failure("Host world snapshot is too large")
@@ -15435,7 +15428,7 @@ func _apply_received_host_world() -> void:
         return
     var save_json: String = decompressed.get_string_from_utf8()
     print("[lucid-blocks-coop] Host world snapshot decompressed bytes=%s" % save_json.length())
-    var register_parse: Variant = JSON.parse_string(incoming_snapshot_register_json)
+    var register_parse: Variant = JSON.parse_string(snapshot_receive_runtime.register_json)
     var save_parse: Variant = JSON.parse_string(save_json)
     if not (register_parse is Dictionary) or not (save_parse is Dictionary):
         _handle_host_world_snapshot_failure("Failed to parse host world")
@@ -15447,7 +15440,7 @@ func _apply_received_host_world() -> void:
         _handle_host_world_snapshot_failure("Host world snapshot failed safety checks")
         return
 
-    await _load_host_world_snapshot(native_register, native_save, incoming_snapshot_host_position)
+    await _load_host_world_snapshot(native_register, native_save, snapshot_receive_runtime.host_position)
 
 
 func _handle_host_world_snapshot_failure(reason: String) -> void:
@@ -15512,7 +15505,7 @@ func _load_host_world_snapshot(register_data: Dictionary, save_data: Dictionary,
     _prepare_client_world_sync()
     if is_instance_valid(Ref.player):
         Ref.player.disabled = true
-    if incoming_snapshot_follow_host_position:
+    if snapshot_receive_runtime.follow_host_position:
         _teleport_local_player_near(host_position)
     if not multiplayer.is_server() and _has_live_peer():
         status_message = "Restoring character"
@@ -18902,11 +18895,7 @@ func begin_host_world_snapshot(register_json: String, chunk_count: int, host_pos
         _handle_host_world_snapshot_failure("Rejected unsafe host world snapshot")
         return
 
-    incoming_snapshot_register_json = register_json
-    incoming_snapshot_chunk_count = chunk_count
-    incoming_snapshot_chunks.clear()
-    incoming_snapshot_host_position = host_position
-    incoming_snapshot_follow_host_position = follow_host_position
+    snapshot_receive_runtime.begin(register_json, chunk_count, host_position, follow_host_position)
     client_session_runtime.receiving_host_world = true
     status_message = "Receiving host world (%s chunks)" % chunk_count
     print("[lucid-blocks-coop] Begin receiving host world chunks=%s register_bytes=%s" % [chunk_count, register_json.length()])
@@ -18919,21 +18908,18 @@ func host_world_snapshot_chunk(chunk_index: int, data: PackedByteArray) -> void:
         return
 
     _mark_host_contact()
-    if not CoopWorldSnapshot.is_snapshot_chunk_index_valid(chunk_index, incoming_snapshot_chunk_count, data.size(), SNAPSHOT_CHUNK_SIZE):
+    if not CoopWorldSnapshot.is_snapshot_chunk_index_valid(chunk_index, snapshot_receive_runtime.chunk_count, data.size(), SNAPSHOT_CHUNK_SIZE):
         _handle_host_world_snapshot_failure("Rejected unsafe host world chunk")
         return
-    var total_bytes: int = data.size()
-    for chunk in incoming_snapshot_chunks.values():
-        if chunk is PackedByteArray:
-            total_bytes += (chunk as PackedByteArray).size()
+    var total_bytes: int = snapshot_receive_runtime.total_compressed_bytes_with(data)
     if not CoopWorldSnapshot.is_snapshot_compressed_size_within_limit(total_bytes, CLIENT_SAFE_MAX_SNAPSHOT_COMPRESSED_BYTES):
         _handle_host_world_snapshot_failure("Host world snapshot is too large")
         return
 
-    incoming_snapshot_chunks[chunk_index] = data
-    status_message = "Receiving host world (%s/%s)" % [incoming_snapshot_chunks.size(), incoming_snapshot_chunk_count]
-    if incoming_snapshot_chunk_count <= 8 or incoming_snapshot_chunks.size() == incoming_snapshot_chunk_count or incoming_snapshot_chunks.size() % 8 == 0:
-        print("[lucid-blocks-coop] Receiving host world %s/%s" % [incoming_snapshot_chunks.size(), incoming_snapshot_chunk_count])
+    snapshot_receive_runtime.add_chunk(chunk_index, data)
+    status_message = "Receiving host world (%s/%s)" % [snapshot_receive_runtime.received_count(), snapshot_receive_runtime.chunk_count]
+    if snapshot_receive_runtime.chunk_count <= 8 or snapshot_receive_runtime.received_count() == snapshot_receive_runtime.chunk_count or snapshot_receive_runtime.received_count() % 8 == 0:
+        print("[lucid-blocks-coop] Receiving host world %s/%s" % [snapshot_receive_runtime.received_count(), snapshot_receive_runtime.chunk_count])
     _update_status_text()
 
 
@@ -18944,7 +18930,7 @@ func finish_host_world_snapshot() -> void:
 
     _mark_host_contact()
 
-    print("[lucid-blocks-coop] Finish host world snapshot chunks=%s/%s" % [incoming_snapshot_chunks.size(), incoming_snapshot_chunk_count])
+    print("[lucid-blocks-coop] Finish host world snapshot chunks=%s/%s" % [snapshot_receive_runtime.received_count(), snapshot_receive_runtime.chunk_count])
     _apply_received_host_world.call_deferred()
 
 

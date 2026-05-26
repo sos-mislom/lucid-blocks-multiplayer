@@ -73,7 +73,34 @@ Validation:
 
 ### Next candidate blocks
 
-1. `CoopSnapshotReceiveRuntime`: incoming snapshot register/chunks/host position.
-2. `CoopWorldMutationRuntime`: dirty chunk keys, chunk tickets, action result caches.
-3. `CoopInterestRuntime`: entity/drop interest caches and counters.
-4. `CoopMenuRuntime`: UI node references and browser page state.
+1. `CoopWorldMutationRuntime`: dirty chunk keys, chunk tickets, action result caches.
+2. `CoopInterestRuntime`: entity/drop interest caches and counters.
+3. `CoopMenuRuntime`: UI node references and browser page state.
+
+## 2026-05-26 - Snapshot Receive Runtime
+
+### Boundary chosen for block 2
+
+Move the host-world snapshot receive buffer into `CoopSnapshotReceiveRuntime`.
+
+Scope:
+
+- incoming snapshot register JSON;
+- expected snapshot chunk count;
+- received compressed chunk map;
+- host position used after load;
+- follow-host-position flag.
+
+Reason:
+
+- this is a pure mutable receive buffer with a clear lifecycle:
+  begin -> receive chunks -> finish/apply -> clear;
+- RPC handlers and world loading can stay on `coop_manager.gd`;
+- it reduces another top-level state cluster without touching gameplay
+  authority.
+
+Non-goals:
+
+- do not move snapshot RPC entry points;
+- do not change snapshot wire format;
+- do not change save sanitization or world loading.
