@@ -1,8 +1,4 @@
-work/logs/
-work/recovered/
-work/tools/
-work/export/
-work/release/
+work/
 backups/
 logs/
 __pycache__/

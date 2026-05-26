@@ -130,7 +130,7 @@ func _apply_native_patch_config(config_path: String) -> void:
         var dedicated_no_render: bool = _read_dedicated_bool_arg(["--lb-dedicated-no-render", "--dedicated-no-render"], true)
         if dedicated_no_render and coop_native_patch.has_method("set_dedicated_no_render_enabled"):
             no_render_ok = bool(coop_native_patch.call("set_dedicated_no_render_enabled", true))
-        var dedicated_load_radius: int = _read_dedicated_int_arg(["--lb-load-radius", "--load-radius"], 80)
+        var dedicated_load_radius: int = _read_dedicated_int_arg(["--lb-load-radius", "--load-radius"], 16)
         var dedicated_render_distance: int = _read_dedicated_int_arg(["--lb-native-render-distance", "--lb-render-distance"], dedicated_load_radius)
         instance_radius_cap = clampi(dedicated_load_radius, 16, 128)
         render_distance = clampi(dedicated_render_distance, instance_radius_cap, 128)

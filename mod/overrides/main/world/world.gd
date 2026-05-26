@@ -85,10 +85,10 @@ func _on_delusion_updated(new_value: float) -> void :
 
 func _on_settings_updated() -> void :
     if _is_dedicated_server_runtime():
-        instance_radius = _get_dedicated_instance_radius()
-        buffer_instance_radius = _get_dedicated_buffer_radius(instance_radius)
+        instance_radius = 16
+        buffer_instance_radius = 16
         if not dedicated_radius_logged:
-            print("[lucid-blocks-coop] Dedicated: world load radius=%s buffer=%s." % [instance_radius, buffer_instance_radius])
+            print("[lucid-blocks-coop] Dedicated MVP radius patch active: world load radius=%s buffer=%s." % [instance_radius, buffer_instance_radius])
             dedicated_radius_logged = true
         Ref.world.force_reload()
         RenderingServer.viewport_set_scaling_3d_scale(get_viewport().get_viewport_rid(), 0.25)
@@ -127,15 +127,17 @@ func _is_dedicated_server_runtime() -> bool:
 
 
 func _get_dedicated_instance_radius() -> int:
-    if Ref.coop_manager != null and Ref.coop_manager.has_method("get_dedicated_load_radius"):
-        return int(Ref.coop_manager.call("get_dedicated_load_radius", 80))
-    return clampi(_read_dedicated_int_arg(["--lb-load-radius", "--load-radius"], 80), 16, 128)
+    var arg_radius: int = _read_dedicated_int_arg(["--lb-load-radius", "--load-radius"], -1)
+    if arg_radius > 0:
+        return clampi(arg_radius, 16, 128)
+    return 16
 
 
 func _get_dedicated_buffer_radius(load_radius: int) -> int:
-    if Ref.coop_manager != null and Ref.coop_manager.has_method("get_dedicated_buffer_radius"):
-        return int(Ref.coop_manager.call("get_dedicated_buffer_radius", maxi(load_radius, 80)))
-    return clampi(_read_dedicated_int_arg(["--lb-buffer-radius", "--buffer-radius"], maxi(load_radius, 80)), load_radius, 192)
+    var arg_radius: int = _read_dedicated_int_arg(["--lb-buffer-radius", "--buffer-radius"], -1)
+    if arg_radius > 0:
+        return clampi(arg_radius, load_radius, 192)
+    return load_radius
 
 
 func _read_dedicated_int_arg(names: Array[String], default_value: int) -> int:

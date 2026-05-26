@@ -9,10 +9,11 @@ param(
     # process command-line and in any error logs.
     [string]$PrivateKeyPath = "",
     [string]$RemoteRoot = "/opt/lucid-blocks-server",
-    [string]$ServiceName = "lucid-blocks-dedicated.service",
+    [string]$ServiceName = "lucid-blocks-linux-dedicated.service",
     [int]$ReadinessTimeoutSec = 180,
     [string]$PlinkPath = "",
     [string]$PscpPath = "",
+    [switch]$UploadNativePatch,
     [switch]$SkipRestart
 )
 
@@ -92,6 +93,31 @@ if ($LASTEXITCODE -ne 0) {
     throw "pscp failed with exit code $LASTEXITCODE"
 }
 
+$nativePatchDir = Join-Path $repoRoot "native_patch\runtime_extension"
+$nativePatchGdext = Join-Path $nativePatchDir "coop_native_patch.gdextension"
+$nativePatchConfig = Join-Path $nativePatchDir "patch_config.json"
+$nativePatchDll = Get-ChildItem -LiteralPath (Join-Path $nativePatchDir "build\coopnativepatch") -Filter "libcoopnativepatch*.double.x86_64.dll" -File -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+if ($UploadNativePatch -and (Test-Path $nativePatchGdext) -and (Test-Path $nativePatchConfig) -and $null -ne $nativePatchDll) {
+    Write-Host "Uploading native patch extension files..."
+    $remoteNativeDir = "$RemoteRoot/game/coop-native-patch"
+    $remoteNativeDirQuoted = ConvertTo-BashSingleQuoted $remoteNativeDir
+    & $PlinkPath @authArgs -ssh "${UserName}@${HostName}" "mkdir -p $remoteNativeDirQuoted" | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "remote native patch directory creation failed with exit code $LASTEXITCODE"
+    }
+    foreach ($nativeFile in @($nativePatchGdext, $nativePatchConfig, $nativePatchDll.FullName)) {
+        & $PscpPath @authArgs $nativeFile "${UserName}@${HostName}:$remoteNativeDir/" | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            throw "native patch upload failed for $nativeFile with exit code $LASTEXITCODE"
+        }
+    }
+} elseif ($UploadNativePatch) {
+    Write-Warning "Native patch extension files are incomplete locally; dedicated no-render patch will not be updated."
+} else {
+    Write-Host "Skipping native patch extension upload for the MVP Linux dedicated profile."
+}
+
 $remoteRootQuoted = ConvertTo-BashSingleQuoted $RemoteRoot
 $serviceNameQuoted = ConvertTo-BashSingleQuoted $ServiceName
 $restartLine = if ($SkipRestart) { "echo SKIP_RESTART" } else { "systemctl restart $serviceNameQuoted" }
@@ -103,17 +129,23 @@ remote_root=$remoteRootQuoted
 service_name=$serviceNameQuoted
 primary_mod_dir="`$remote_root/game/mods"
 nested_mod_dir="`$remote_root/game/lucid-blocks/mods"
-mkdir -p "`$primary_mod_dir" "`$nested_mod_dir"
+disabled_nested_dir="`$remote_root/mod-backups-outside-mods/disabled-nested"
+mkdir -p "`$primary_mod_dir" "`$nested_mod_dir" "`$disabled_nested_dir"
 
 if find "`$nested_mod_dir" -maxdepth 1 -type f -name '*.pck' | grep -q .; then
-  backup_dir="`$nested_mod_dir/backup-before-deploy-`$(date +%Y%m%d-%H%M%S)"
+  backup_dir="`$disabled_nested_dir/backup-before-deploy-`$(date +%Y%m%d-%H%M%S)"
   mkdir -p "`$backup_dir"
   find "`$nested_mod_dir" -maxdepth 1 -type f -name '*.pck' -exec mv -t "`$backup_dir" {} +
 fi
 
-cp -f "`$primary_mod_dir/lucid-blocks-multiplayer.pck" "`$nested_mod_dir/lucid-blocks-multiplayer.pck"
+if [ -d "`$remote_root/game/coop-native-patch" ]; then
+  disabled_native_dir="`$remote_root/mod-backups-outside-mods/disabled-native-patch"
+  mkdir -p "`$disabled_native_dir"
+  mv "`$remote_root/game/coop-native-patch" "`$disabled_native_dir/coop-native-patch-`$(date +%Y%m%d-%H%M%S)"
+fi
+
 echo PRIMARY_HASH=`$(sha256sum "`$primary_mod_dir/lucid-blocks-multiplayer.pck" | cut -d' ' -f1)
-echo NESTED_HASH=`$(sha256sum "`$nested_mod_dir/lucid-blocks-multiplayer.pck" | cut -d' ' -f1)
+echo ACTIVE_MODS=`$(find "`$primary_mod_dir" "`$nested_mod_dir" -maxdepth 1 -type f -name '*.pck' | wc -l)
 
 $restartLine
 
@@ -148,7 +180,7 @@ while time.time() < deadline:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.settimeout(1.0)
         try:
-            sock.sendto(b'{"type":"status"}', ("127.0.0.1", port))
+            sock.sendto(b"status", ("127.0.0.1", port))
             data, _ = sock.recvfrom(8192)
             payload = json.loads(data.decode("utf-8", "replace"))
             last_payload = payload

@@ -75,7 +75,7 @@ static func build_thread_payload(state: Dictionary) -> Dictionary:
         "status_port": state.get("status_port", 0),
         "transport": state.get("transport", ""),
         "message": str(state.get("status_message", "")),
-        "players": 0,
+        "players": state.get("players", 0),
         "max_players": state.get("max_players", 0),
         "world_title": str(state.get("world_title", "")),
         "version": str(state.get("version", "")),

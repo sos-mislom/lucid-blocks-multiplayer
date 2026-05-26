@@ -44,6 +44,8 @@ const DEDICATED_WATER_SYNC_INTERVAL: float = 1.25
 const DEDICATED_TPS_SAMPLE_INTERVAL: float = 2.0
 const DEDICATED_TPS_WARN_INTERVAL: float = 15.0
 const DEDICATED_HEALTH_LOG_INTERVAL: float = 30.0
+const DEDICATED_MAIN_LOAD_WAIT_FRAMES: int = 120
+const DEDICATED_WORLD_START_WAIT_FRAMES: int = 1800
 const DEDICATED_TPS_SOFT_FLOOR: float = 50.0
 const DEDICATED_TPS_HARD_FLOOR: float = 42.0
 const DEDICATED_LOAD_FOCUS_HOLD_SEC: float = 2.5
@@ -55,8 +57,8 @@ const SERVER_ACTION_RESULT_TTL_MSEC: int = 60000
 const SERVER_ACTION_RESULT_CLEANUP_INTERVAL_SEC: float = 5.0
 const SERVER_DIRTY_CHUNK_FLUSH_INTERVAL_SEC: float = 60.0
 const SERVER_RECENT_DROP_VISIBILITY_SEC: float = 8.0
-const DEFAULT_DEDICATED_LOAD_RADIUS: int = 80
-const DEFAULT_DEDICATED_BUFFER_RADIUS: int = 80
+const DEFAULT_DEDICATED_LOAD_RADIUS: int = 16
+const DEFAULT_DEDICATED_BUFFER_RADIUS: int = 16
 const ENTITY_DR_POS_ERR_SQ: float = 0.0225
 const ENTITY_DR_KB_ERR_SQ: float = 0.25
 const ENTITY_DR_YAW_ERR_DEG: float = 5.0
@@ -581,6 +583,10 @@ func _cmdline_has_flag(args: Array[String], names: Array[String]) -> bool:
     return CoopDedicatedBootstrap.cmdline_has_flag(args, names)
 
 
+func _has_dedicated_boot_arg() -> bool:
+    return _cmdline_has_flag(_get_coop_cmdline_args(), ["--lb-dedicated", "--lucid-dedicated", "--dedicated"])
+
+
 func _read_cmdline_value(args: Array[String], names: Array[String], default_value: String = "") -> String:
     return CoopDedicatedBootstrap.read_cmdline_value(args, names, default_value)
 
@@ -777,9 +783,14 @@ func _dedicated_server_bootstrap() -> void:
     if not Ref.main.loaded:
         dedicated_boot_phase = "waiting_main"
         await _await_dedicated_main_loaded()
+        if not bool(Ref.main.loaded):
+            push_warning("[lucid-blocks-coop] Dedicated continuing without Main.loaded; headless main menu may never flip that flag.")
     if is_instance_valid(Ref.world) and not Ref.world.started_up:
         dedicated_boot_phase = "waiting_world"
         await _await_dedicated_world_started()
+        if is_instance_valid(Ref.world) and not bool(Ref.world.started_up):
+            _dedicated_server_fail("Dedicated server timed out waiting for world startup")
+            return
     await get_tree().process_frame
 
     var save_register: SaveFileRegister = _find_dedicated_save_register()
@@ -852,9 +863,11 @@ func _dedicated_server_bootstrap() -> void:
 
 func _await_dedicated_main_loaded() -> void:
     var frames_waited: int = 0
-    while is_instance_valid(Ref.main) and not bool(Ref.main.loaded) and frames_waited < 300:
+    while is_instance_valid(Ref.main) and not bool(Ref.main.loaded) and frames_waited < DEDICATED_MAIN_LOAD_WAIT_FRAMES:
         await get_tree().process_frame
         frames_waited += 1
+        if frames_waited % 300 == 0:
+            print("[lucid-blocks-coop] Dedicated waiting for Main.loaded frames=%s" % frames_waited)
     print("[lucid-blocks-coop] Dedicated main load wait done loaded=%s frames=%s" % [
         str(is_instance_valid(Ref.main) and bool(Ref.main.loaded)),
         frames_waited,
@@ -863,9 +876,11 @@ func _await_dedicated_main_loaded() -> void:
 
 func _await_dedicated_world_started() -> void:
     var frames_waited: int = 0
-    while is_instance_valid(Ref.world) and not bool(Ref.world.started_up) and frames_waited < 300:
+    while is_instance_valid(Ref.world) and not bool(Ref.world.started_up) and frames_waited < DEDICATED_WORLD_START_WAIT_FRAMES:
         await get_tree().process_frame
         frames_waited += 1
+        if frames_waited % 300 == 0:
+            print("[lucid-blocks-coop] Dedicated waiting for world startup frames=%s" % frames_waited)
     print("[lucid-blocks-coop] Dedicated world startup wait done started=%s frames=%s" % [
         str(is_instance_valid(Ref.world) and bool(Ref.world.started_up)),
         frames_waited,
@@ -1219,6 +1234,7 @@ func _start_dedicated_status_udp() -> void:
         return
 
     print("[lucid-blocks-coop] UDP status listening on port %s" % dedicated_status_port)
+    _publish_dedicated_status_snapshot()
     dedicated_status_thread_running = true
     dedicated_status_thread = Thread.new()
     var thread_err: Error = dedicated_status_thread.start(Callable(self, "_dedicated_status_thread_main"))
@@ -1253,7 +1269,7 @@ func _tick_dedicated_status_udp() -> void:
 
 
 func _publish_dedicated_status_snapshot() -> void:
-    if not dedicated_status_thread_running:
+    if dedicated_status_udp == null:
         return
     var encoded: PackedByteArray = CoopStatus.encode_status_payload(_get_dedicated_status_thread_payload())
     dedicated_status_snapshot_mutex.lock()
@@ -1295,6 +1311,11 @@ func _poll_dedicated_status_udp(thread_safe_payload: bool = false) -> void:
 func _get_dedicated_status_thread_payload() -> Dictionary:
     var ready: bool = dedicated_server_ready
     var phase: String = dedicated_boot_phase if dedicated_boot_phase != "" else ("ready" if ready else "starting")
+    var connected_count: int = 0
+    if multiplayer.multiplayer_peer != null and multiplayer.is_server():
+        for peer_id in peer_states.keys():
+            if int(peer_id) != 1:
+                connected_count += 1
     return CoopStatus.build_thread_payload({
         "ready": ready,
         "boot_phase": phase,
@@ -1307,6 +1328,7 @@ func _get_dedicated_status_thread_payload() -> Dictionary:
         "status_port": dedicated_status_port,
         "transport": SESSION_TRANSPORT_LAN,
         "status_message": status_message,
+        "players": connected_count,
         "max_players": MAX_CLIENTS,
         "world_title": dedicated_server_world_title,
         "version": str(ProjectSettings.get("application/config/version")),
@@ -1565,6 +1587,8 @@ func _get_effective_water_sync_interval() -> float:
 
 
 func _get_steam_api() -> Object:
+    if dedicated_server_enabled or _has_dedicated_boot_arg():
+        return null
     var steamworks_node: Node = get_node_or_null("/root/Steamworks")
     if steamworks_node != null and (
         steamworks_node.has_method("createLobby")
@@ -1595,6 +1619,8 @@ func _steam_call(method_name: String, args: Array = []) -> Variant:
 
 
 func _steam_call_alias(method_names: Array[String], args: Array = []) -> Variant:
+    if dedicated_server_enabled or _has_dedicated_boot_arg():
+        return null
     var steam_api: Object = _get_steam_api()
     if steam_api == null:
         return null
@@ -1624,6 +1650,8 @@ func _connect_steam_signal(signal_name: String, method_name: String) -> void:
 
 
 func _install_steam_integration() -> void:
+    if dedicated_server_enabled or _has_dedicated_boot_arg():
+        return
     if _get_steam_api() == null:
         return
     _connect_steam_signal("lobby_created", "_on_steam_lobby_created")
@@ -1636,6 +1664,8 @@ func _install_steam_integration() -> void:
 
 
 func _handle_pending_steam_launch_invite() -> void:
+    if dedicated_server_enabled or _has_dedicated_boot_arg():
+        return
     var launch_lobby_id: int = _extract_lobby_id_from_connect_string(" ".join(OS.get_cmdline_args()))
     if launch_lobby_id <= 0:
         return
@@ -1669,7 +1699,7 @@ func _prepare_session_start_state(is_host: bool) -> void:
 
 
 func _get_local_steam_id() -> int:
-    if dedicated_server_enabled:
+    if dedicated_server_enabled or _has_dedicated_boot_arg():
         return 0
     if Steamworks != null and int(Steamworks.steam_id) > 0:
         return int(Steamworks.steam_id)
@@ -9504,6 +9534,8 @@ func _normalize_avatar_id(raw_avatar_id: String) -> String:
 
 
 func _get_local_player_name() -> String:
+    if dedicated_server_enabled or _has_dedicated_boot_arg():
+        return "Dedicated Server"
     var steam_name: String = str(Steamworks.get_username())
     if steam_name.strip_edges() != "":
         return steam_name
@@ -9526,6 +9558,9 @@ func _get_local_player_key_suffix() -> String:
 
 
 func _get_local_player_key() -> String:
+    if dedicated_server_enabled or _has_dedicated_boot_arg():
+        return "dedicated_server"
+
     var suffix: String = _get_local_player_key_suffix()
     var steam_id: int = _get_local_steam_id()
     if steam_id > 0:

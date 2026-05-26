@@ -54,18 +54,18 @@ extends RefCounted
 # Inputs are Variant so the forwarder can pass through whatever
 # `OS.get_cmdline_args()` / `OS.get_cmdline_user_args()` return
 # without forcing the caller to pre-coerce.
+static func _append_cmdline_args(result: Array, raw_args: Variant) -> void:
+    if raw_args is Array or raw_args is PackedStringArray:
+        for arg in raw_args:
+            var arg_text: String = str(arg)
+            if not result.has(arg_text):
+                result.append(arg_text)
+
+
 static func merge_cmdline_args(base_args: Variant, user_args: Variant) -> Array:
     var result: Array = []
-    if base_args is Array:
-        for arg in base_args:
-            var arg_text: String = str(arg)
-            if not result.has(arg_text):
-                result.append(arg_text)
-    if user_args is Array:
-        for arg in user_args:
-            var arg_text: String = str(arg)
-            if not result.has(arg_text):
-                result.append(arg_text)
+    _append_cmdline_args(result, base_args)
+    _append_cmdline_args(result, user_args)
     return result
 
 
