@@ -2,6 +2,7 @@ extends Node
 
 
 const AvatarRegistry = preload("res://coop_mod/avatar_registry.gd")
+const CoopClientSessionRuntimeScript = preload("res://coop_mod/coop_client_session_runtime.gd")
 const RemotePlayerMarkerScript = preload("res://coop_mod/remote_player_marker.gd")
 const CONFIG_PATH: String = "user://lucid_blocks_coop_config.json"
 const SERVER_REGISTRY_PATH: String = "user://lucid_blocks_server_registry.json"
@@ -282,8 +283,6 @@ var active_steam_host_id: int = 0
 var pending_steam_action: String = ""
 var pending_steam_lobby_id: int = 0
 var pending_steam_open_invite_dialog: bool = false
-var reconnect_steam_lobby_id: int = 0
-var reconnect_steam_host_id: int = 0
 var join_protocol_pending: bool = false
 var join_protocol_accepted: bool = false
 var join_protocol_deadline_msec: int = 0
@@ -301,7 +300,6 @@ var server_only_save_menu_filter_timer: float = 0.0
 var status_message: String = "Idle"
 var panel_visible: bool = false
 var restore_capture_on_close: bool = false
-var receiving_host_world: bool = false
 var incoming_snapshot_register_json: String = ""
 var incoming_snapshot_chunk_count: int = 0
 var incoming_snapshot_chunks: Dictionary = {}
@@ -330,7 +328,7 @@ var guest_authoritative_entity_registry: Dictionary = {}
 var session_load_radius_applied: bool = false
 var session_previous_instance_radius: int = -1
 var session_previous_buffer_instance_radius: int = -1
-var local_quit_in_progress: bool = false
+var client_session_runtime = CoopClientSessionRuntimeScript.new(DEFAULT_PORT)
 var guest_persistent_ready: bool = false
 var client_server_state_confirmed: bool = false
 var client_server_state_confirmed_sequence: int = -1
@@ -344,15 +342,6 @@ var client_state_heartbeat_timer: float = 0.0
 var local_state_sequence: int = 0
 var host_snapshot_sequence: int = 0
 var last_received_host_snapshot_sequence: int = -1
-var client_restore_in_progress: bool = false
-var client_menu_kick_pending: bool = false
-var client_menu_kick_sequence: int = 0
-var reconnect_pending: bool = false
-var reconnect_attempt_count: int = 0
-var reconnect_retry_timer: float = 0.0
-var reconnect_reason: String = ""
-var host_rehost_pending: bool = false
-var host_rehost_port: int = DEFAULT_PORT
 var suppress_local_game_quit_session_shutdown: bool = false
 var single_player_shutdown_world_pause_override: bool = false
 var single_player_shutdown_world_original_process_mode: int = -1
@@ -1680,7 +1669,7 @@ func _extract_lobby_id_from_connect_string(raw_text: String) -> int:
 
 
 func _prepare_session_start_state(is_host: bool) -> void:
-    local_quit_in_progress = false
+    client_session_runtime.local_quit_in_progress = false
     local_fake_death_save_override.clear()
     local_fake_death_respawn_target_valid = false
     clear_fake_death_override_after_shutdown = false
@@ -1696,9 +1685,9 @@ func _prepare_session_start_state(is_host: bool) -> void:
     deferred_host_autosave_pending = false
     client_state_heartbeat_timer = 0.0
     last_sent_client_state_hash = 0
-    host_rehost_pending = false
+    client_session_runtime.host_rehost_pending = false
     if is_host:
-        host_rehost_port = int(config.get("port", DEFAULT_PORT))
+        client_session_runtime.host_rehost_port = int(config.get("port", DEFAULT_PORT))
 
 
 func _get_local_steam_id() -> int:
@@ -1783,8 +1772,8 @@ func _start_steam_host_peer(lobby_id: int) -> void:
     active_session_transport = SESSION_TRANSPORT_STEAM
     active_steam_lobby_id = lobby_id
     active_steam_host_id = _get_local_steam_id()
-    reconnect_steam_lobby_id = active_steam_lobby_id
-    reconnect_steam_host_id = active_steam_host_id
+    client_session_runtime.reconnect_steam_lobby_id = active_steam_lobby_id
+    client_session_runtime.reconnect_steam_host_id = active_steam_host_id
     _install_player_death_hook()
     _install_game_menu_quit_hook()
     status_message = "Hosting Steam lobby"
@@ -1819,8 +1808,8 @@ func _start_steam_client_peer(lobby_id: int) -> void:
     peer_states.clear()
     active_session_transport = SESSION_TRANSPORT_STEAM
     active_steam_lobby_id = lobby_id
-    reconnect_steam_lobby_id = active_steam_lobby_id
-    reconnect_steam_host_id = active_steam_host_id
+    client_session_runtime.reconnect_steam_lobby_id = active_steam_lobby_id
+    client_session_runtime.reconnect_steam_host_id = active_steam_host_id
     _install_player_death_hook()
     _install_game_menu_quit_hook()
     status_message = "Joining Steam lobby"
@@ -1837,12 +1826,7 @@ func host_steam_session(auto_open_invite_dialog: bool = true) -> void:
         _update_status_text()
         return
 
-    reconnect_pending = false
-    reconnect_attempt_count = 0
-    reconnect_retry_timer = 0.0
-    reconnect_reason = ""
-    reconnect_steam_lobby_id = 0
-    reconnect_steam_host_id = 0
+    client_session_runtime.reset_reconnect()
     pending_steam_action = "host"
     pending_steam_lobby_id = 0
     pending_steam_open_invite_dialog = auto_open_invite_dialog
@@ -1866,12 +1850,7 @@ func _join_steam_lobby_by_id(lobby_id: int, reset_reconnect_state: bool = true) 
         return
 
     if reset_reconnect_state:
-        reconnect_pending = false
-        reconnect_attempt_count = 0
-        reconnect_retry_timer = 0.0
-        reconnect_reason = ""
-        reconnect_steam_lobby_id = 0
-        reconnect_steam_host_id = 0
+        client_session_runtime.reset_reconnect()
         _set_reconnect_overlay_visible(false)
 
     pending_steam_action = "join"
@@ -4268,11 +4247,11 @@ func _restore_game_menu_quit_hook() -> void:
 
 
 func _on_game_menu_quit_requested_coop() -> void:
-    if client_menu_kick_pending:
+    if client_session_runtime.client_menu_kick_pending:
         print("[lucid-blocks-coop] leave already pending; forcing main menu fallback")
         _force_client_main_menu_kick.call_deferred("leave retry")
         return
-    if local_quit_in_progress:
+    if client_session_runtime.local_quit_in_progress:
         print("[lucid-blocks-coop] leave already in progress")
         return
     if _should_force_guest_leave_to_main_menu():
@@ -4293,10 +4272,10 @@ func _on_game_menu_quit_requested_coop() -> void:
 func _host_save_and_quit_to_main_menu() -> void:
     if not is_instance_valid(Ref.main):
         return
-    if local_quit_in_progress:
+    if client_session_runtime.local_quit_in_progress:
         return
 
-    local_quit_in_progress = true
+    client_session_runtime.local_quit_in_progress = true
     _set_quit_overlay_visible(true, "Saving world and closing host session...")
     if is_local_player_fake_dead():
         _abort_host_respawn(false, false)
@@ -4305,7 +4284,7 @@ func _host_save_and_quit_to_main_menu() -> void:
     if _has_live_peer() and multiplayer.is_server():
         await _shutdown_host_session(false, "Host saved and quit")
 
-    local_quit_in_progress = false
+    client_session_runtime.local_quit_in_progress = false
     await Ref.main._on_game_menu_quit_requested()
     _finish_leave_to_main_menu_state()
 
@@ -4509,19 +4488,14 @@ func _guest_save_and_quit_to_main_menu(reason: String = "Left host session") -> 
         return
     if multiplayer.is_server() and _has_live_peer():
         return
-    if client_menu_kick_pending:
+    if client_session_runtime.client_menu_kick_pending:
         return
 
-    reconnect_pending = false
-    reconnect_attempt_count = 0
-    reconnect_retry_timer = 0.0
-    reconnect_reason = ""
-    reconnect_steam_lobby_id = 0
-    reconnect_steam_host_id = 0
-    host_rehost_pending = false
+    client_session_runtime.reset_reconnect()
+    client_session_runtime.host_rehost_pending = false
     _set_reconnect_overlay_visible(false)
 
-    local_quit_in_progress = true
+    client_session_runtime.local_quit_in_progress = true
     print("[lucid-blocks-coop] guest leave started")
     _set_quit_overlay_visible(true, "Uploading player state and leaving server...")
     if _has_live_peer():
@@ -4531,25 +4505,14 @@ func _guest_save_and_quit_to_main_menu(reason: String = "Left host session") -> 
 
     status_message = reason
     _update_status_text()
-    client_menu_kick_pending = true
+    client_session_runtime.client_menu_kick_pending = true
     await _force_client_main_menu_kick("guest leave")
 
 
 func _finish_leave_to_main_menu_state() -> void:
     if not dedicated_server_enabled and multiplayer.multiplayer_peer != null:
         disconnect_session(false)
-    reconnect_pending = false
-    reconnect_attempt_count = 0
-    reconnect_retry_timer = 0.0
-    reconnect_reason = ""
-    reconnect_steam_lobby_id = 0
-    reconnect_steam_host_id = 0
-    host_rehost_pending = false
-    client_restore_in_progress = false
-    receiving_host_world = false
-    client_menu_kick_pending = false
-    client_menu_kick_sequence += 1
-    local_quit_in_progress = false
+    client_session_runtime.finish_leave_to_menu()
     if get_tree().paused:
         get_tree().paused = false
     _set_reconnect_overlay_visible(false)
@@ -5090,10 +5053,10 @@ func _has_coop_runtime_work() -> bool:
     return dedicated_server_enabled \
         or _has_live_peer() \
         or _has_pending_peer_connection() \
-        or reconnect_pending \
-        or receiving_host_world \
-        or client_restore_in_progress \
-        or host_rehost_pending
+        or client_session_runtime.reconnect_pending \
+        or client_session_runtime.receiving_host_world \
+        or client_session_runtime.client_restore_in_progress \
+        or client_session_runtime.host_rehost_pending
 
 
 func _restore_session_load_radius_if_needed() -> void:
@@ -5174,7 +5137,7 @@ func _physics_process(delta: float) -> void:
     _enforce_shared_bubble_tether(delta)
     _cleanup_client_prediction_state()
 
-    if reconnect_pending:
+    if client_session_runtime.reconnect_pending:
         _tick_reconnect(delta)
 
     if not _has_live_peer():
@@ -5261,7 +5224,7 @@ func _physics_process(delta: float) -> void:
 
     if _has_host_timed_out():
         print("[lucid-blocks-coop] host heartbeat timed out")
-        if not local_quit_in_progress:
+        if not client_session_runtime.local_quit_in_progress:
             _begin_reconnect_flow("Connection timed out")
         return
 
@@ -5394,8 +5357,8 @@ func _start_lan_host(port: int, dedicated_skip_ui_config: bool = false) -> bool:
 
 	pending_steam_action = ""
 	pending_steam_open_invite_dialog = false
-	reconnect_steam_lobby_id = 0
-	reconnect_steam_host_id = 0
+	client_session_runtime.reconnect_steam_lobby_id = 0
+	client_session_runtime.reconnect_steam_host_id = 0
 	if dedicated_skip_ui_config:
 		config["port"] = port
 	else:
@@ -5438,8 +5401,8 @@ func host_session() -> void:
 func join_session(apply_ui_config: bool = true) -> void:
     pending_steam_action = ""
     pending_steam_open_invite_dialog = false
-    reconnect_steam_lobby_id = 0
-    reconnect_steam_host_id = 0
+    client_session_runtime.reconnect_steam_lobby_id = 0
+    client_session_runtime.reconnect_steam_host_id = 0
     if apply_ui_config:
         _apply_ui_to_config()
     _prepare_session_start_state(false)
@@ -5447,9 +5410,7 @@ func join_session(apply_ui_config: bool = true) -> void:
 
     var address: String = str(config.get("address", "127.0.0.1")).strip_edges()
     var port: int = int(config.get("port", DEFAULT_PORT))
-    reconnect_pending = false
-    reconnect_attempt_count = 0
-    reconnect_retry_timer = 0.0
+    client_session_runtime.reset_reconnect()
     _set_reconnect_overlay_visible(false)
     var peer: ENetMultiplayerPeer = ENetMultiplayerPeer.new()
     print("[lucid-blocks-coop] joining ENet server address=%s port=%s" % [address, port])
@@ -5489,8 +5450,8 @@ func disconnect_session(announce: bool = true) -> void:
     handling_client_respawn = false
     host_respawning = false
     remote_host_respawning = false
-    receiving_host_world = false
-    client_restore_in_progress = false
+    client_session_runtime.receiving_host_world = false
+    client_session_runtime.client_restore_in_progress = false
     incoming_snapshot_register_json = ""
     incoming_snapshot_chunk_count = 0
     incoming_snapshot_chunks.clear()
@@ -5526,7 +5487,7 @@ func disconnect_session(announce: bool = true) -> void:
     _restore_session_load_radius_if_needed()
     _restore_game_menu_quit_hook()
     _clear_client_world_entities_and_drops()
-    if not local_quit_in_progress:
+    if not client_session_runtime.local_quit_in_progress:
         _set_quit_overlay_visible(false)
     host_entity_last_sent.clear()
     host_entity_snapshot_last_sent.clear()
@@ -5542,10 +5503,10 @@ func disconnect_session(announce: bool = true) -> void:
     server_peer_confirmed_instance_keys.clear()
     last_local_world_authority = true
     last_local_entity_authority = true
-    client_menu_kick_pending = false
+    client_session_runtime.client_menu_kick_pending = false
     last_host_contact_time = 0
     last_sent_client_state_hash = 0
-    reconnect_retry_timer = 0.0
+    client_session_runtime.reconnect_retry_timer = 0.0
     active_server_command_policy = _get_local_server_command_policy()
     pending_remote_block_changes.clear()
     pending_remote_water_changes.clear()
@@ -5567,26 +5528,21 @@ func disconnect_session(announce: bool = true) -> void:
 
     _update_status_text()
 
-    if local_downed_active and not local_double_downed_active and not local_quit_in_progress and is_instance_valid(Ref.main):
+    if local_downed_active and not local_double_downed_active and not client_session_runtime.local_quit_in_progress and is_instance_valid(Ref.main):
         Ref.main.player_death.call_deferred()
 
 
 func leave_session() -> void:
-    if client_menu_kick_pending:
+    if client_session_runtime.client_menu_kick_pending:
         print("[lucid-blocks-coop] leave already pending; forcing main menu fallback")
         _force_client_main_menu_kick.call_deferred("leave retry")
         return
-    if local_quit_in_progress:
+    if client_session_runtime.local_quit_in_progress:
         print("[lucid-blocks-coop] leave already in progress")
         return
     var should_kick_to_menu: bool = _should_force_guest_leave_to_main_menu()
-    reconnect_pending = false
-    reconnect_attempt_count = 0
-    reconnect_retry_timer = 0.0
-    reconnect_reason = ""
-    reconnect_steam_lobby_id = 0
-    reconnect_steam_host_id = 0
-    host_rehost_pending = false
+    client_session_runtime.reset_reconnect()
+    client_session_runtime.host_rehost_pending = false
     _set_reconnect_overlay_visible(false)
     _close_pause_menu_if_open()
 
@@ -5598,7 +5554,7 @@ func leave_session() -> void:
         return
 
     if multiplayer.is_server():
-        local_quit_in_progress = true
+        client_session_runtime.local_quit_in_progress = true
         if is_local_player_fake_dead():
             _abort_host_respawn(false, false)
         clear_fake_death_override_after_shutdown = true
@@ -5623,7 +5579,7 @@ func is_death_override_active() -> bool:
 func request_player_death_intercept(_player: Entity = null) -> bool:
     if not is_death_override_active():
         return false
-    local_quit_in_progress = false
+    client_session_runtime.local_quit_in_progress = false
     local_fake_death_save_override.clear()
     local_fake_death_respawn_target_valid = false
     clear_fake_death_override_after_shutdown = false
@@ -5826,7 +5782,7 @@ func _commit_local_real_death(reason: String = "") -> void:
     handling_host_respawn = false
     host_respawning = false
     remote_host_respawning = false
-    local_quit_in_progress = false
+    client_session_runtime.local_quit_in_progress = false
     if is_instance_valid(Ref.player):
         Ref.player.invincible = false
         Ref.player.invincible_temporary = false
@@ -8225,9 +8181,9 @@ func _find_peer_state_by_query(query: String) -> Dictionary:
 
 func _is_client_gameplay_locked() -> bool:
     return not multiplayer.is_server() and (
-        reconnect_pending
-        or client_restore_in_progress
-        or receiving_host_world
+        client_session_runtime.reconnect_pending
+        or client_session_runtime.client_restore_in_progress
+        or client_session_runtime.receiving_host_world
         or not guest_persistent_ready
         or not client_server_state_confirmed
         or is_local_player_fake_dead()
@@ -8238,7 +8194,7 @@ func _is_client_gameplay_locked() -> bool:
 func _consume_locked_client_action(action_label: String = "action") -> bool:
     if not _is_client_gameplay_locked():
         return false
-    if not receiving_host_world and not client_restore_in_progress and guest_persistent_ready:
+    if not client_session_runtime.receiving_host_world and not client_session_runtime.client_restore_in_progress and guest_persistent_ready:
         _broadcast_local_state_now()
     status_message = "Waiting for server"
     _update_status_text()
@@ -9298,11 +9254,11 @@ func _mark_host_contact() -> void:
 
 
 func _has_host_timed_out() -> bool:
-    if multiplayer.is_server() or not _has_live_peer() or local_quit_in_progress:
+    if multiplayer.is_server() or not _has_live_peer() or client_session_runtime.local_quit_in_progress:
         return false
     if last_host_contact_time <= 0:
         return false
-    var timeout_seconds: float = HOST_TIMEOUT_SECONDS * (3.0 if (receiving_host_world or client_restore_in_progress) else 1.0)
+    var timeout_seconds: float = HOST_TIMEOUT_SECONDS * (3.0 if (client_session_runtime.receiving_host_world or client_session_runtime.client_restore_in_progress) else 1.0)
     return (Time.get_ticks_msec() - last_host_contact_time) > int(timeout_seconds * 1000.0)
 
 
@@ -9487,7 +9443,7 @@ func _capture_local_state() -> Dictionary:
     if multiplayer.is_server():
         state["active"] = not (local_fake_death_pending or host_respawning)
     else:
-        state["active"] = guest_persistent_ready and not receiving_host_world and not is_local_player_fake_dead()
+        state["active"] = guest_persistent_ready and not client_session_runtime.receiving_host_world and not is_local_player_fake_dead()
     if local_downed:
         state["active"] = true
     state["dimension"] = int(Ref.world.current_dimension)
@@ -9886,7 +9842,7 @@ func _send_requested_dimension_world_snapshot(sender_id: int, target_dimension: 
 func _is_local_world_authority() -> bool:
     if multiplayer.is_server():
         return true
-    if reconnect_pending or client_restore_in_progress:
+    if client_session_runtime.reconnect_pending or client_session_runtime.client_restore_in_progress:
         return false
     if not _has_live_peer():
         return true
@@ -9919,7 +9875,7 @@ func _get_nearest_other_same_instance_player_distance(fallback_distance: float =
 
 
 func _has_local_guest_entity_authority() -> bool:
-    if multiplayer.is_server() or reconnect_pending or client_restore_in_progress:
+    if multiplayer.is_server() or client_session_runtime.reconnect_pending or client_session_runtime.client_restore_in_progress:
         return false
     if not _can_sample_player() or not _has_live_peer() or is_local_player_fake_dead() or is_local_player_downed():
         return false
@@ -11985,7 +11941,7 @@ func _finish_guest_character_restore() -> void:
     clear_fake_death_override_after_shutdown = false
     handling_client_respawn = false
     remote_host_respawning = false
-    client_restore_in_progress = false
+    client_session_runtime.client_restore_in_progress = false
     guest_persistent_ready = true
     if is_instance_valid(Ref.player):
         Ref.player.dead = false
@@ -11993,10 +11949,7 @@ func _finish_guest_character_restore() -> void:
         Ref.player.make_invincible_temporary()
     _set_death_overlay_visible(false)
     if not multiplayer.is_server():
-        reconnect_pending = false
-        reconnect_attempt_count = 0
-        reconnect_retry_timer = 0.0
-        reconnect_reason = ""
+        client_session_runtime.reset_reconnect()
         client_server_state_confirmed = false
         client_server_state_confirmed_sequence = -1
         client_server_state_confirmed_instance_key = ""
@@ -12095,7 +12048,7 @@ func _watch_guest_character_restore_timeout() -> void:
     await get_tree().create_timer(CLIENT_GUEST_RESTORE_TIMEOUT_SEC, true).timeout
     if multiplayer.is_server() or not _has_live_peer():
         return
-    if not client_restore_in_progress or guest_persistent_ready or receiving_host_world:
+    if not client_session_runtime.client_restore_in_progress or guest_persistent_ready or client_session_runtime.receiving_host_world:
         return
     if not _can_sample_player(false):
         return
@@ -14857,29 +14810,29 @@ func _on_connected_to_server() -> void:
 
 func _on_connection_failed() -> void:
     client_connection_deadline_msec = 0
-    if reconnect_pending:
+    if client_session_runtime.reconnect_pending:
         disconnect_session(false)
-        client_restore_in_progress = true
+        client_session_runtime.client_restore_in_progress = true
         if _can_sample_player():
             _reset_local_player_motion()
             Ref.player.disabled = true
-        local_quit_in_progress = false
+        client_session_runtime.local_quit_in_progress = false
         status_message = "Reconnect failed"
         _update_status_text()
-        reconnect_retry_timer = AUTO_RECONNECT_INTERVAL
+        client_session_runtime.reconnect_retry_timer = AUTO_RECONNECT_INTERVAL
         _install_game_menu_quit_hook()
         _set_reconnect_overlay_visible(true)
         return
 
     disconnect_session(false)
-    local_quit_in_progress = false
+    client_session_runtime.local_quit_in_progress = false
     push_warning("[lucid-blocks-coop] connection failed")
     _display_connection_status("Connection failed: server unreachable or refused", true)
 
 
 func _on_local_game_quit() -> void:
     if dedicated_server_enabled:
-        local_quit_in_progress = false
+        client_session_runtime.local_quit_in_progress = false
         clear_fake_death_override_after_shutdown = false
         _apply_dedicated_player_safety()
         return
@@ -14892,26 +14845,26 @@ func _on_local_game_quit() -> void:
 
     clear_fake_death_override_after_shutdown = false
     if not _has_live_peer():
-        local_quit_in_progress = false
+        client_session_runtime.local_quit_in_progress = false
         return
 
-    local_quit_in_progress = true
+    client_session_runtime.local_quit_in_progress = true
     if multiplayer.is_server():
-        host_rehost_pending = false
+        client_session_runtime.host_rehost_pending = false
         _shutdown_host_session.call_deferred(false, "Host left the session")
     else:
-        var menu_kick_already_pending: bool = client_menu_kick_pending
+        var menu_kick_already_pending: bool = client_session_runtime.client_menu_kick_pending
         if guest_persistent_ready:
             _send_persistent_state_to_host(true)
         disconnect_session(false)
         if not menu_kick_already_pending and is_instance_valid(Ref.main):
-            client_menu_kick_pending = true
+            client_session_runtime.client_menu_kick_pending = true
             _force_client_main_menu_kick.call_deferred("game quit")
 
 
 func _on_server_disconnected() -> void:
     client_connection_deadline_msec = 0
-    if local_quit_in_progress:
+    if client_session_runtime.local_quit_in_progress:
         disconnect_session(false)
         _display_connection_status("Server disconnected", true)
         return
@@ -14931,7 +14884,7 @@ func _shutdown_host_session(reconnectable: bool, reason: String = "") -> void:
         local_fake_death_respawn_target_valid = false
         clear_fake_death_override_after_shutdown = false
     if not reconnectable:
-        local_quit_in_progress = false
+        client_session_runtime.local_quit_in_progress = false
 
 
 func _on_local_world_loaded() -> void:
@@ -14944,7 +14897,7 @@ func _on_local_world_loaded() -> void:
     call_deferred("_enforce_server_only_world_access")
     _migrate_loaded_legacy_pocket_to_local_owner_if_needed()
     call_deferred("_ensure_pause_menu_coop_ui")
-    if not host_rehost_pending:
+    if not client_session_runtime.host_rehost_pending:
         return
     _resume_host_session_after_world_load.call_deferred()
 
@@ -14958,7 +14911,7 @@ func _is_loaded_world_server_only() -> bool:
 func _should_force_guest_leave_to_main_menu() -> bool:
     if multiplayer.is_server():
         return false
-    if reconnect_pending or client_restore_in_progress:
+    if client_session_runtime.reconnect_pending or client_session_runtime.client_restore_in_progress:
         return true
     if reconnect_overlay != null and reconnect_overlay.visible:
         return true
@@ -14977,28 +14930,28 @@ func _enforce_server_only_world_access() -> void:
 
 
 func _resume_host_session_after_world_load() -> void:
-    if not host_rehost_pending or _has_live_peer():
+    if not client_session_runtime.host_rehost_pending or _has_live_peer():
         return
 
     for attempt in range(50):
         await get_tree().create_timer(0.1, true).timeout
-        if not host_rehost_pending or _has_live_peer():
+        if not client_session_runtime.host_rehost_pending or _has_live_peer():
             return
         if _can_share_loaded_world():
             break
 
-    if not host_rehost_pending or _has_live_peer() or not _can_share_loaded_world():
-        host_rehost_pending = false
+    if not client_session_runtime.host_rehost_pending or _has_live_peer() or not _can_share_loaded_world():
+        client_session_runtime.host_rehost_pending = false
         return
 
-    config["port"] = host_rehost_port
+    config["port"] = client_session_runtime.host_rehost_port
     _sync_inputs_from_config()
     status_message = "Rehosting local session"
     _update_status_text()
     _install_player_death_hook()
     host_session()
     if multiplayer.is_server():
-        host_rehost_pending = false
+        client_session_runtime.host_rehost_pending = false
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -15007,7 +14960,7 @@ func host_session_ending(reconnectable: bool = false, reason: String = "") -> vo
         return
 
     if reconnectable:
-        local_quit_in_progress = false
+        client_session_runtime.local_quit_in_progress = false
         _begin_reconnect_flow(reason if reason != "" else "Host is rehosting")
         return
 
@@ -15015,33 +14968,25 @@ func host_session_ending(reconnectable: bool = false, reason: String = "") -> vo
 
 
 func _queue_client_main_menu_kick() -> void:
-    if (multiplayer.is_server() and _has_live_peer()) or client_menu_kick_pending:
+    if (multiplayer.is_server() and _has_live_peer()) or client_session_runtime.client_menu_kick_pending:
         return
-    client_menu_kick_pending = true
+    client_session_runtime.client_menu_kick_pending = true
     _kick_client_to_main_menu.call_deferred()
 
 
 func _begin_reconnect_flow(reason: String) -> void:
-    if multiplayer.is_server() or local_quit_in_progress:
+    if multiplayer.is_server() or client_session_runtime.local_quit_in_progress:
         return
     if local_downed:
         disconnect_session(false)
         return
 
-    var interrupted_world_restore: bool = receiving_host_world or client_restore_in_progress
-    if active_session_transport == SESSION_TRANSPORT_STEAM:
-        reconnect_steam_lobby_id = active_steam_lobby_id
-        reconnect_steam_host_id = active_steam_host_id
-    else:
-        reconnect_steam_lobby_id = 0
-        reconnect_steam_host_id = 0
+    var interrupted_world_restore: bool = client_session_runtime.receiving_host_world or client_session_runtime.client_restore_in_progress
+    var steam_lobby_id: int = active_steam_lobby_id if active_session_transport == SESSION_TRANSPORT_STEAM else 0
+    var steam_host_id: int = active_steam_host_id if active_session_transport == SESSION_TRANSPORT_STEAM else 0
     _close_pause_menu_if_open()
     disconnect_session(false)
-    reconnect_pending = true
-    client_restore_in_progress = true
-    reconnect_attempt_count = 0
-    reconnect_retry_timer = AUTO_RECONNECT_INTERVAL
-    reconnect_reason = reason
+    client_session_runtime.begin_reconnect(reason, AUTO_RECONNECT_INTERVAL, steam_lobby_id, steam_host_id)
     status_message = reason
     _update_status_text()
     _install_game_menu_quit_hook()
@@ -15054,16 +14999,16 @@ func _begin_reconnect_flow(reason: String) -> void:
 
 
 func _tick_reconnect(delta: float) -> void:
-    if (multiplayer.is_server() and _has_live_peer()) or _has_live_peer() or receiving_host_world:
+    if (multiplayer.is_server() and _has_live_peer()) or _has_live_peer() or client_session_runtime.receiving_host_world:
         return
 
-    var tick_result: Dictionary = _tick_reconnect_timer(delta, reconnect_retry_timer)
-    reconnect_retry_timer = float(tick_result.get("timer", 0.0))
+    var tick_result: Dictionary = _tick_reconnect_timer(delta, client_session_runtime.reconnect_retry_timer)
+    client_session_runtime.reconnect_retry_timer = float(tick_result.get("timer", 0.0))
     if reconnect_overlay_subtitle != null:
         reconnect_overlay_subtitle.text = _format_reconnect_subtitle(
-            reconnect_reason,
-            reconnect_retry_timer,
-            reconnect_attempt_count,
+            client_session_runtime.reconnect_reason,
+            client_session_runtime.reconnect_retry_timer,
+            client_session_runtime.reconnect_attempt_count,
         )
 
     if not bool(tick_result.get("should_attempt", false)):
@@ -15097,15 +15042,11 @@ func _resolve_lan_reconnect_target(raw_address: Variant, raw_port: Variant, defa
 
 
 func _attempt_reconnect() -> void:
-    if (multiplayer.is_server() and _has_live_peer()) or _has_live_peer() or receiving_host_world:
+    if (multiplayer.is_server() and _has_live_peer()) or _has_live_peer() or client_session_runtime.receiving_host_world:
         return
 
     _close_pause_menu_if_open()
-    reconnect_pending = true
-    client_restore_in_progress = true
-    reconnect_attempt_count += 1
-    reconnect_retry_timer = AUTO_RECONNECT_INTERVAL
-    local_quit_in_progress = false
+    client_session_runtime.begin_reconnect_attempt(AUTO_RECONNECT_INTERVAL)
     guest_persistent_ready = false
     last_host_contact_time = 0
     client_state_heartbeat_timer = 0.0
@@ -15113,9 +15054,9 @@ func _attempt_reconnect() -> void:
     status_message = "Attempting reconnect..."
     _update_status_text()
     if reconnect_overlay_subtitle != null:
-        reconnect_overlay_subtitle.text = _format_reconnect_attempting_now_subtitle(reconnect_reason)
+        reconnect_overlay_subtitle.text = _format_reconnect_attempting_now_subtitle(client_session_runtime.reconnect_reason)
 
-    if reconnect_steam_host_id > 0 or reconnect_steam_lobby_id > 0:
+    if client_session_runtime.reconnect_steam_host_id > 0 or client_session_runtime.reconnect_steam_lobby_id > 0:
         var steam_peer := _create_steam_multiplayer_peer()
         if steam_peer == null:
             status_message = "Reconnect failed (Steam unavailable)"
@@ -15124,24 +15065,24 @@ func _attempt_reconnect() -> void:
             return
 
         var steam_kind: String = _compute_next_reconnect_attempt_kind(
-            reconnect_steam_host_id,
-            reconnect_steam_lobby_id,
+            client_session_runtime.reconnect_steam_host_id,
+            client_session_runtime.reconnect_steam_lobby_id,
             steam_peer.has_method("create_client"),
             steam_peer.has_method("connect_to_lobby"),
         )
         var steam_err: Error = ERR_UNAVAILABLE
         match steam_kind:
             "steam_create_client":
-                steam_err = steam_peer.call("create_client", reconnect_steam_host_id, 0)
+                steam_err = steam_peer.call("create_client", client_session_runtime.reconnect_steam_host_id, 0)
             "steam_connect_to_lobby":
-                steam_err = steam_peer.call("connect_to_lobby", reconnect_steam_lobby_id)
+                steam_err = steam_peer.call("connect_to_lobby", client_session_runtime.reconnect_steam_lobby_id)
             "steam_join_lobby":
                 pending_steam_action = "join"
-                pending_steam_lobby_id = reconnect_steam_lobby_id
+                pending_steam_lobby_id = client_session_runtime.reconnect_steam_lobby_id
                 pending_steam_open_invite_dialog = false
                 status_message = "Reconnecting through Steam..."
                 _update_status_text()
-                _steam_call_alias(["joinLobby", "join_lobby"], [reconnect_steam_lobby_id])
+                _steam_call_alias(["joinLobby", "join_lobby"], [client_session_runtime.reconnect_steam_lobby_id])
                 _set_reconnect_overlay_visible(true)
                 return
 
@@ -15154,8 +15095,8 @@ func _attempt_reconnect() -> void:
         multiplayer.multiplayer_peer = steam_peer
         peer_states.clear()
         active_session_transport = SESSION_TRANSPORT_STEAM
-        active_steam_lobby_id = reconnect_steam_lobby_id
-        active_steam_host_id = reconnect_steam_host_id
+        active_steam_lobby_id = client_session_runtime.reconnect_steam_lobby_id
+        active_steam_host_id = client_session_runtime.reconnect_steam_host_id
         status_message = "Reconnecting through Steam..."
         _update_status_text()
         _set_reconnect_overlay_visible(true)
@@ -15224,12 +15165,11 @@ func _set_quit_overlay_visible(visible: bool, subtitle: String = "Saving session
 
 func _kick_client_to_main_menu() -> void:
     if (multiplayer.is_server() and _has_live_peer()) or not is_instance_valid(Ref.main):
-        client_restore_in_progress = false
-        client_menu_kick_pending = false
+        client_session_runtime.client_restore_in_progress = false
+        client_session_runtime.client_menu_kick_pending = false
         return
 
-    client_menu_kick_sequence += 1
-    var kick_sequence: int = client_menu_kick_sequence
+    var kick_sequence: int = client_session_runtime.start_menu_kick()
     _watch_client_menu_kick_timeout.call_deferred(kick_sequence)
     _close_pause_menu_if_open()
 
@@ -15268,9 +15208,9 @@ func _kick_client_to_main_menu() -> void:
 
 func _watch_client_menu_kick_timeout(kick_sequence: int) -> void:
     await get_tree().create_timer(CLIENT_MENU_KICK_TIMEOUT_SEC, true).timeout
-    if kick_sequence != client_menu_kick_sequence:
+    if kick_sequence != client_session_runtime.client_menu_kick_sequence:
         return
-    if not client_menu_kick_pending and not local_quit_in_progress:
+    if not client_session_runtime.client_menu_kick_pending and not client_session_runtime.local_quit_in_progress:
         return
     print("[lucid-blocks-coop] leave timed out; forcing main menu fallback")
     _force_client_main_menu_kick("leave timeout")
@@ -15278,9 +15218,9 @@ func _watch_client_menu_kick_timeout(kick_sequence: int) -> void:
 
 func _force_client_main_menu_kick(reason: String = "leave fallback") -> void:
     if not is_instance_valid(Ref.main):
-        client_restore_in_progress = false
-        client_menu_kick_pending = false
-        local_quit_in_progress = false
+        client_session_runtime.client_restore_in_progress = false
+        client_session_runtime.client_menu_kick_pending = false
+        client_session_runtime.local_quit_in_progress = false
         return
 
     print("[lucid-blocks-coop] forcing main menu after %s" % reason)
@@ -15474,7 +15414,7 @@ func _resolve_dedicated_snapshot_spawn_position(dimension: int, fallback_positio
 
 func _apply_received_host_world() -> void:
     if incoming_snapshot_register_json == "":
-        receiving_host_world = false
+        client_session_runtime.receiving_host_world = false
         return
     print("[lucid-blocks-coop] Applying host world snapshot chunks=%s/%s" % [incoming_snapshot_chunks.size(), incoming_snapshot_chunk_count])
 
@@ -15511,17 +15451,17 @@ func _apply_received_host_world() -> void:
 
 
 func _handle_host_world_snapshot_failure(reason: String) -> void:
-    receiving_host_world = false
-    client_restore_in_progress = false
+    client_session_runtime.receiving_host_world = false
+    client_session_runtime.client_restore_in_progress = false
     status_message = reason
     _update_status_text()
-    if not multiplayer.is_server() and _has_live_peer() and not local_quit_in_progress:
+    if not multiplayer.is_server() and _has_live_peer() and not client_session_runtime.local_quit_in_progress:
         _begin_reconnect_flow(reason)
 
 
 func _load_host_world_snapshot(register_data: Dictionary, save_data: Dictionary, host_position: Vector3) -> void:
-    receiving_host_world = true
-    client_restore_in_progress = true
+    client_session_runtime.receiving_host_world = true
+    client_session_runtime.client_restore_in_progress = true
     local_fake_death_pending = false
     local_fake_death_save_override.clear()
     local_fake_death_respawn_target_valid = false
@@ -15580,7 +15520,7 @@ func _load_host_world_snapshot(register_data: Dictionary, save_data: Dictionary,
         request_guest_persistent_state.rpc_id(1, _get_local_player_key(), _get_local_player_name())
         _watch_guest_character_restore_timeout.call_deferred()
 
-    receiving_host_world = false
+    client_session_runtime.receiving_host_world = false
     print("[lucid-blocks-coop] Host world ready, requesting persistent character")
 
 
@@ -18287,7 +18227,7 @@ func send_guest_visual_bolt(start_position: Vector3, direction: Vector3) -> void
 
 @rpc("authority", "call_remote", "unreliable")
 func sync_host_visual_ball_throw(start_position: Vector3, linear_velocity: Vector3) -> void:
-    if multiplayer.is_server() or receiving_host_world or _is_local_world_authority():
+    if multiplayer.is_server() or client_session_runtime.receiving_host_world or _is_local_world_authority():
         return
     _mark_host_contact()
     if not _is_safe_vector3(start_position) or not _is_safe_vector3(linear_velocity):
@@ -18297,7 +18237,7 @@ func sync_host_visual_ball_throw(start_position: Vector3, linear_velocity: Vecto
 
 @rpc("authority", "call_remote", "unreliable")
 func sync_host_visual_heart_throw(start_position: Vector3, linear_velocity: Vector3) -> void:
-    if multiplayer.is_server() or receiving_host_world or _is_local_world_authority():
+    if multiplayer.is_server() or client_session_runtime.receiving_host_world or _is_local_world_authority():
         return
     _mark_host_contact()
     if not _is_safe_vector3(start_position) or not _is_safe_vector3(linear_velocity):
@@ -18307,7 +18247,7 @@ func sync_host_visual_heart_throw(start_position: Vector3, linear_velocity: Vect
 
 @rpc("authority", "call_remote", "unreliable")
 func sync_host_visual_blast(start_position: Vector3, holder_velocity: Vector3, direction: Vector3) -> void:
-    if multiplayer.is_server() or receiving_host_world or _is_local_world_authority():
+    if multiplayer.is_server() or client_session_runtime.receiving_host_world or _is_local_world_authority():
         return
     _mark_host_contact()
     if not _is_safe_vector3(start_position) or not _is_safe_vector3(holder_velocity) or not _is_safe_vector3(direction):
@@ -18317,7 +18257,7 @@ func sync_host_visual_blast(start_position: Vector3, holder_velocity: Vector3, d
 
 @rpc("authority", "call_remote", "unreliable")
 func sync_host_visual_bolt(start_position: Vector3, direction: Vector3) -> void:
-    if multiplayer.is_server() or receiving_host_world or _is_local_world_authority():
+    if multiplayer.is_server() or client_session_runtime.receiving_host_world or _is_local_world_authority():
         return
     _mark_host_contact()
     if not _is_safe_vector3(start_position) or not _is_safe_vector3(direction):
@@ -18967,7 +18907,7 @@ func begin_host_world_snapshot(register_json: String, chunk_count: int, host_pos
     incoming_snapshot_chunks.clear()
     incoming_snapshot_host_position = host_position
     incoming_snapshot_follow_host_position = follow_host_position
-    receiving_host_world = true
+    client_session_runtime.receiving_host_world = true
     status_message = "Receiving host world (%s chunks)" % chunk_count
     print("[lucid-blocks-coop] Begin receiving host world chunks=%s register_bytes=%s" % [chunk_count, register_json.length()])
     _update_status_text()
@@ -18975,7 +18915,7 @@ func begin_host_world_snapshot(register_json: String, chunk_count: int, host_pos
 
 @rpc("authority", "call_remote", "reliable")
 func host_world_snapshot_chunk(chunk_index: int, data: PackedByteArray) -> void:
-    if multiplayer.is_server() or not receiving_host_world:
+    if multiplayer.is_server() or not client_session_runtime.receiving_host_world:
         return
 
     _mark_host_contact()
@@ -18999,7 +18939,7 @@ func host_world_snapshot_chunk(chunk_index: int, data: PackedByteArray) -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func finish_host_world_snapshot() -> void:
-    if multiplayer.is_server() or not receiving_host_world:
+    if multiplayer.is_server() or not client_session_runtime.receiving_host_world:
         return
 
     _mark_host_contact()
@@ -19691,7 +19631,7 @@ func sync_remove_drop(drop_uuid: String) -> void:
 
 @rpc("authority", "call_remote", "unreliable")
 func server_world_state(sequence: int, drop_snapshots: Array, entity_snapshots: Array = []) -> void:
-    if multiplayer.is_server() or receiving_host_world or _is_local_world_authority() or _has_local_guest_entity_authority():
+    if multiplayer.is_server() or client_session_runtime.receiving_host_world or _is_local_world_authority() or _has_local_guest_entity_authority():
         return
     _mark_host_contact()
     if drop_snapshots.size() > CLIENT_SAFE_MAX_DROP_SNAPSHOTS or entity_snapshots.size() > CLIENT_SAFE_MAX_ENTITY_SNAPSHOTS:
@@ -19987,7 +19927,7 @@ func server_snapshot(snapshot_sequence: int, snapshot: Array) -> void:
             "dedicated_server": bool(entry[23]) if entry.size() > 23 else false,
         }
 
-    # if not multiplayer.is_server() and not receiving_host_world and _can_sample_player() and peer_states.has(1):
+    # if not multiplayer.is_server() and not client_session_runtime.receiving_host_world and _can_sample_player() and peer_states.has(1):
     #     var host_instance_key: String = str(peer_states[1].get("dimension_instance_key", ""))
     #     if host_instance_key != "" and host_instance_key != get_active_dimension_instance_key():
     #         status_message = "Resyncing host world"

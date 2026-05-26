@@ -196,6 +196,14 @@ on the multiplayer authority.
 
 Target topology (phase by phase):
 
+- `CoopClientSessionRuntime`
+                           — stateful client leave/reconnect/restore runtime:
+                             local quit flag, menu-kick sequence, reconnect
+                             route/timer/attempts, host-rehost flag/port, and
+                             host-world receive/restore flags.
+                             The `@rpc` handlers and engine side effects stay on
+                             `coop_manager.gd`; the mutable state now lives in
+                             `mod/overrides/coop_mod/coop_client_session_runtime.gd`.
 - `CoopIO`                — atomic file IO, bounded dicts, primitive validators.
                             **Phase 1 complete** (`mod/overrides/coop_mod/coop_io.gd`).
 - `CoopJournal`            — chunk journal append/replay/compact, applied-seq.
