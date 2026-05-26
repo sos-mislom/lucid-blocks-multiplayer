@@ -47,6 +47,10 @@ try {
     }
 
     Add-ZipEntry -Source $PckPath -EntryName "lucid-blocks-multiplayer.pck"
+    $privateRegistryPath = Join-Path $RootDir "private\lucid_blocks_server_registry.json"
+    if (Test-Path $privateRegistryPath) {
+        Add-ZipEntry -Source $privateRegistryPath -EntryName "lucid_blocks_server_registry.json"
+    }
     Add-ZipEntry -Source (Join-Path $RootDir "docs\FRIEND_INSTALL_RU.md") -EntryName "README_RU.md"
     Add-ZipEntry -Source (Join-Path $RootDir "docs\LINUX_SERVER_RU.md") -EntryName "LINUX_SERVER_RU.md"
     Add-ZipEntry -Source (Join-Path $RootDir "docs\LINUX_SERVER_EN.md") -EntryName "LINUX_SERVER_EN.md"

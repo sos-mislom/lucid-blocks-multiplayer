@@ -14,6 +14,10 @@ lucid-blocks-multiplayer.pck
 
 Если отправляешь release archive, внутри должен быть именно этот `.pck`.
 
+Если в архиве есть `lucid_blocks_server_registry.json`, положи его в ту же папку `mods`.
+Это список серверов для свежего клиента: без него новый игрок увидит пустой список,
+пока не добавит сервер вручную.
+
 ## Установка
 
 1. Закрыть Lucid Blocks.
@@ -30,7 +34,8 @@ zzz-lucid-blocks-command-chat*.pck
 ```
 
 5. Положить `lucid-blocks-multiplayer.pck` в `mods`.
-6. Запустить игру.
+6. Если есть `lucid_blocks_server_registry.json`, положить его рядом в `mods`.
+7. Запустить игру.
 
 ## Подключение
 

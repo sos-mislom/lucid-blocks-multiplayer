@@ -133,22 +133,6 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 .\scripts\build_release_packs.ps1
 ```
 
-Проверка перед публикацией:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-.\scripts\check_release_hygiene.ps1
-git diff --check
-git status --short
-```
-
-## Перед открытием репозитория
-
-- Не публиковать `deploy.txt`, `.env`, пароли, токены, приватные IP/порты и локальные логи.
-- Оставить [CREDITS.md](CREDITS.md).
-- Не выдавать оригинальный co-op mod за свой.
-- Не класть fan/test аватары в release archives без очищенных прав.
-- Использовать реальные скриншоты из `docs/assets/screenshots`, не мокапы.
 
 ## Атрибуция
 

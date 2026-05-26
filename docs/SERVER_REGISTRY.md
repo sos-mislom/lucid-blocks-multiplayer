@@ -6,11 +6,18 @@ friendly names only.
 
 ## Local Registry
 
-Create this file in the game user data folder:
+Create this file in one of these locations:
 
 ```text
 lucid_blocks_server_registry.json
 ```
+
+The client checks, in order:
+
+- bundled `res://coop_mod/lucid_blocks_server_registry.json`, if a private build includes one;
+- the game folder;
+- the game `mods` folder;
+- the game user data folder.
 
 Template:
 
