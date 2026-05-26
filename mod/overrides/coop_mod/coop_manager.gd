@@ -1537,7 +1537,7 @@ func _get_world_streaming_runtime_metrics() -> Dictionary:
         if Ref.world.has_method("is_all_loaded"):
             metrics["world_all_loaded"] = bool(Ref.world.call("is_all_loaded"))
 
-    var session_region_count: int = _get_same_instance_session_positions().size() if _can_sample_player() else 0
+    var session_region_count: int = _get_same_instance_session_positions().size()
     var ticket_region_count: int = _get_active_server_chunk_ticket_positions(DEDICATED_MAX_WORLD_LOAD_TICKET_CENTERS, false).size()
     metrics["loaded_region_count"] = session_region_count + ticket_region_count
 
@@ -10099,6 +10099,16 @@ func _refresh_host_entity_activity_override(delta: float) -> void:
 
     var session_positions: Array = _get_same_instance_session_positions()
     session_positions.append_array(_get_active_server_chunk_ticket_positions(DEDICATED_MAX_WORLD_LOAD_TICKET_CENTERS, true))
+    if session_positions.is_empty():
+        for child in _get_live_tracked_entities():
+            if not (child is Entity) or child is Player or is_remote_player_proxy(child):
+                continue
+            _set_host_entity_activity_override(child as Entity, false)
+        _set_host_background_runtime_node(Ref.entity_spawner, false)
+        _set_host_background_runtime_node(Ref.sun, false)
+        host_entity_activity_override_active = false
+        return
+
     var simulation_radius_sq: float = pow(get_server_entity_simulation_radius(), 2.0)
     for child in _get_live_tracked_entities():
         if not (child is Entity) or child is Player or is_remote_player_proxy(child):
@@ -10123,16 +10133,20 @@ func _is_position_within_any_session_position(world_position: Vector3, session_p
 
 func _get_same_instance_session_positions() -> Array:
     var positions: Array = []
-    if not _can_sample_player():
-        return positions
 
-    if _is_local_session_player_active():
+    if _can_sample_player(false) and _is_local_session_player_active():
         positions.append(Ref.player.global_position)
     if not _has_live_peer():
         return positions
 
-    var local_peer_id: int = multiplayer.get_unique_id()
     var active_instance_key: String = get_active_dimension_instance_key()
+    if active_instance_key == "":
+        return positions
+
+    var local_peer_id: int = 0
+    if multiplayer.multiplayer_peer != null:
+        local_peer_id = multiplayer.get_unique_id()
+
     for peer_id in peer_states.keys():
         if int(peer_id) == local_peer_id:
             continue
@@ -10141,7 +10155,9 @@ func _get_same_instance_session_positions() -> Array:
             continue
         if str(state.get("dimension_instance_key", "")) != active_instance_key:
             continue
-        positions.append(state.get("position", Ref.player.global_position))
+        var peer_position: Variant = state.get("position", null)
+        if peer_position is Vector3:
+            positions.append(peer_position)
 
     return positions
 
