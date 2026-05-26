@@ -201,10 +201,14 @@ func _apply_frame_pacing_settings() -> void:
     if Ref.coop_manager != null \
         and Ref.coop_manager.has_method("is_dedicated_server_mode") \
         and bool(Ref.coop_manager.call("is_dedicated_server_mode")):
-        _apply_background_cpu_override(true)
+        var dedicated_active_players: bool = Ref.coop_manager.has_method("has_connected_remote_peers") \
+            and bool(Ref.coop_manager.call("has_connected_remote_peers"))
+        if OS is Object:
+            OS.set("low_processor_usage_mode", not dedicated_active_players)
+            OS.set("low_processor_usage_mode_sleep_usec", 0 if dedicated_active_players else 25000)
         process_mode = Node.PROCESS_MODE_ALWAYS
         DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
-        fps_cap = maxi(Engine.physics_ticks_per_second, 60)
+        fps_cap = maxi(Engine.physics_ticks_per_second, 60) if dedicated_active_players else 15
         Engine.max_fps = fps_cap
         return
 

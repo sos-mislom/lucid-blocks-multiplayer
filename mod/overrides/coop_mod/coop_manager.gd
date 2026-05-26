@@ -38,6 +38,8 @@ const DEFAULT_PUBLIC_SERVERS: Array = []
 const SEND_INTERVAL: float = 0.025
 const WORLD_STATE_INTERVAL: float = 0.05
 const DEDICATED_TARGET_TPS: int = 60
+const DEDICATED_IDLE_FPS: int = 15
+const DEDICATED_IDLE_SLEEP_USEC: int = 25000
 const DEDICATED_SEND_INTERVAL: float = 1.0 / 20.0
 const DEDICATED_WORLD_STATE_INTERVAL: float = 0.08
 const DEDICATED_WATER_SYNC_INTERVAL: float = 1.25
@@ -759,11 +761,12 @@ func _build_default_coop_config() -> Dictionary:
 func _apply_dedicated_performance_profile() -> void:
     if not dedicated_server_enabled:
         return
+    var active_players: bool = has_connected_remote_peers()
     Engine.physics_ticks_per_second = DEDICATED_TARGET_TPS
-    Engine.max_fps = DEDICATED_TARGET_TPS
+    Engine.max_fps = DEDICATED_TARGET_TPS if active_players else DEDICATED_IDLE_FPS
     if OS is Object:
-        OS.set("low_processor_usage_mode", false)
-        OS.set("low_processor_usage_mode_sleep_usec", 0)
+        OS.set("low_processor_usage_mode", not active_players)
+        OS.set("low_processor_usage_mode_sleep_usec", 0 if active_players else DEDICATED_IDLE_SLEEP_USEC)
     DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 
 

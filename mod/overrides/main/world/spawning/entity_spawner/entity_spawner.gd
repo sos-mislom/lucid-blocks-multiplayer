@@ -44,6 +44,14 @@ func _is_dedicated_server_mode() -> bool:
         and bool(Ref.coop_manager.call("is_dedicated_server_mode"))
 
 
+func _has_dedicated_spawn_interest() -> bool:
+    if not _is_dedicated_server_mode():
+        return true
+    if Ref.coop_manager == null or not Ref.coop_manager.has_method("get_same_instance_session_player_count"):
+        return false
+    return int(Ref.coop_manager.call("get_same_instance_session_player_count")) > 0
+
+
 func _get_server_world_load_center() -> Vector3:
     if Ref.coop_manager != null and Ref.coop_manager.has_method("get_world_load_center"):
         return Ref.coop_manager.get_world_load_center(Ref.player.global_position)
@@ -62,6 +70,8 @@ func _ready() -> void :
 
 func _on_chunk_loaded(chunk_position: Vector3i) -> void :
     if not can_spawn:
+        return
+    if not _has_dedicated_spawn_interest():
         return
 
     if _can_use_multi_region_logic() and _get_same_instance_player_count() > 1:
@@ -220,6 +230,8 @@ func _get_spawn_anchor() -> Vector3:
 
 
 func attempt_spawn(spawn_position: Vector3, rare: bool = false, care_for_visibility: bool = true) -> bool:
+    if not _has_dedicated_spawn_interest():
+        return false
     if not (Ref.world.current_dimension == LucidBlocksWorld.Dimension.NARAKA or (Ref.world.current_dimension == LucidBlocksWorld.Dimension.FIRMAMENT and not rare)):
         return false
     flush_deleted_entities()
@@ -317,6 +329,10 @@ func attempt_spawn(spawn_position: Vector3, rare: bool = false, care_for_visibil
 
 func _on_timeout(rare: bool = false) -> void :
     var timer: Timer = %RareSpawnTimer if rare else %SpawnTimer
+    if not _has_dedicated_spawn_interest():
+        timer.start(maxf(2.0, fail_time))
+        return
+
     var player_count: int = _get_spawn_group_count()
     var spawned: bool = false
 
