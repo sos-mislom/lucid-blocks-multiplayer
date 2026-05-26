@@ -348,6 +348,22 @@ func is_session_position_loaded(world_position: Vector3) -> bool:
     return _can_use_session_load_proxy() and Ref.coop_manager.is_position_near_same_instance_player(world_position, process_distance)
 
 
+func should_force_host_session_runtime_at(world_position: Vector3) -> bool:
+    return _use_session_targeting() \
+        and Ref.coop_manager != null \
+        and Ref.coop_manager.has_method("should_force_same_instance_entity_runtime") \
+        and bool(Ref.coop_manager.call("should_force_same_instance_entity_runtime", world_position))
+
+
+func force_host_session_runtime_active() -> void:
+    disabled = false
+    set_process(true)
+    set_physics_process(true)
+    if has_node("%VisibleOnScreenEnabler3D"):
+        %VisibleOnScreenEnabler3D.enable_node_path = ""
+        %VisibleOnScreenEnabler3D.process_mode = Node.PROCESS_MODE_DISABLED
+
+
 func is_session_player_entity(entity) -> bool:
     return is_instance_valid(entity) and (entity == Ref.player or (_use_session_targeting() and Ref.coop_manager.is_remote_player_proxy(entity)))
 
@@ -857,6 +873,10 @@ func is_future_position_loaded(delta: float) -> bool:
 
 
 func distance_process_check() -> void :
+    if should_force_host_session_runtime_at(global_position):
+        force_host_session_runtime_active()
+        return
+
     var has_local_player: bool = is_instance_valid(Ref.player)
     var distance: float = INF
     if has_local_player:

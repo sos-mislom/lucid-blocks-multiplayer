@@ -93,6 +93,10 @@ func is_future_position_loaded(delta: float) -> bool:
 
 
 func distance_process_check() -> void:
+    if should_force_host_session_runtime_at(global_position):
+        force_host_session_runtime_active()
+        return
+
     var distance: float = Ref.player.global_position.distance_to(global_position)
     var near_session_player: bool = false
     if _can_use_session_load_proxy():

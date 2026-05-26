@@ -35,3 +35,13 @@ func run(t: CoopTester) -> void:
     t.assert_true(manikin_source.contains("body is Entity or _is_session_player_entity(body)"))
     t.assert_true(diatom_source.contains("body is Entity or _is_session_player_entity(body)"))
     t.assert_true(golem_source.contains("entity is Entity or _is_session_player_entity(entity)"))
+
+    t.begin("Host entity runtime cannot sleep inside active session simulation zones")
+    var blasphemy_source := _read_source("res://main/entity/blasphemy/blasphemy.gd")
+    var coop_manager_source := _read_source("res://coop_mod/coop_manager.gd")
+    t.assert_true(coop_manager_source.contains("func should_force_same_instance_entity_runtime"))
+    t.assert_true(entity_source.contains("func should_force_host_session_runtime_at"))
+    t.assert_true(entity_source.contains("force_host_session_runtime_active()"))
+    t.assert_true(golem_source.contains("should_force_host_session_runtime_at(global_position)"))
+    t.assert_true(blasphemy_source.contains("should_force_host_session_runtime_at(global_position)"))
+    t.assert_true(manikin_source.contains("should_force_host_session_runtime_at(global_position)"))

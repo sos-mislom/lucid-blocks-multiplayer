@@ -10343,6 +10343,19 @@ func is_position_near_same_instance_player(world_position: Vector3, radius: floa
     return _is_near_any_session_position(world_position, _get_same_instance_session_positions(), radius)
 
 
+func should_force_same_instance_entity_runtime(world_position: Vector3) -> bool:
+    if not multiplayer.is_server() or not _has_live_peer():
+        return false
+
+    var session_positions: Array = _get_same_instance_session_positions()
+    session_positions.append_array(_get_active_server_chunk_ticket_positions(DEDICATED_MAX_WORLD_LOAD_TICKET_CENTERS, true))
+    if session_positions.is_empty():
+        return false
+
+    var simulation_radius_sq: float = pow(get_server_entity_simulation_radius(), 2.0)
+    return _is_position_within_any_session_position(world_position, session_positions, simulation_radius_sq)
+
+
 func get_next_same_instance_spawn_anchor(default_position: Vector3) -> Vector3:
     var positions: Array = _get_same_instance_session_positions()
     if positions.is_empty():
