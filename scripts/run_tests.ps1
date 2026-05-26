@@ -55,6 +55,26 @@ if (-not [string]::IsNullOrWhiteSpace($Filter)) {
     Write-Host "  filter: $Filter"
 }
 
+$classCachePath = Join-Path $projectDir ".godot\global_script_class_cache.cfg"
+$needsClassScan = $true
+if (Test-Path $classCachePath) {
+    $classCacheText = Get-Content -Path $classCachePath -Raw
+    $needsClassScan = ($classCacheText -notmatch 'class"\:\s*&"CoopTester"' -or $classCacheText -notmatch 'class"\:\s*&"CoopAdmin"')
+}
+
+if ($needsClassScan) {
+    Write-Host "  warming Godot global class cache"
+    $scanProcess = Start-Process `
+        -FilePath $GodotExe `
+        -ArgumentList @("--headless", "--editor", "--path", $projectDir, "--quit") `
+        -NoNewWindow `
+        -Wait `
+        -PassThru
+    if ($scanProcess.ExitCode -ne 0) {
+        exit $scanProcess.ExitCode
+    }
+}
+
 $process = Start-Process `
     -FilePath $GodotExe `
     -ArgumentList $baseArgs `
