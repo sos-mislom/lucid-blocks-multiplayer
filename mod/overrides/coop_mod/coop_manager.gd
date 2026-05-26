@@ -19477,21 +19477,28 @@ func request_entity_attack(target_uuid: String, damage_position: Vector3, damage
 
     var sender_state: Dictionary = peer_states.get(sender_id, {})
     if sender_state.is_empty() or not _is_peer_state_same_instance(sender_state, get_active_dimension_instance_key()):
+        _log_dedicated_entity_attack_reject(sender_id, "sender_not_in_instance", target_uuid)
         return
 
     var attacker = get_remote_player_proxy(sender_id)
     if attacker == null or not is_instance_valid(attacker) or attacker.dead or attacker.disabled:
+        _log_dedicated_entity_attack_reject(sender_id, "missing_attacker_proxy", target_uuid)
         return
 
+    var attacker_position: Vector3 = sender_state.get("position", attacker.global_position)
     var target = _find_existing_entity_by_uuid(target_uuid)
+    if target == null or not is_instance_valid(target):
+        target = _find_attackable_entity_near_attack_position(damage_position, attacker_position)
     if target == null or not is_instance_valid(target) or not (target is Entity) or target is Player or is_remote_player_proxy(target):
+        _log_dedicated_entity_attack_reject(sender_id, "target_not_found", target_uuid)
         return
 
     var target_entity := target as Entity
     if target_entity.dead or target_entity.disabled or target_entity.direct_damage_cooldown:
+        _log_dedicated_entity_attack_reject(sender_id, "target_unavailable", target_uuid)
         return
-    var attacker_position: Vector3 = sender_state.get("position", attacker.global_position)
     if not CoopCombatSync.is_attack_within_reach(attacker_position, target_entity.global_position, ENTITY_ATTACK_REQUEST_MAX_DISTANCE):
+        _log_dedicated_entity_attack_reject(sender_id, "out_of_reach", target_uuid)
         return
 
     var actual_damage: int = CoopCombatSync.clamp_attack_damage(damage, CLIENT_SAFE_MAX_PLAYER_DAMAGE)
@@ -19522,6 +19529,40 @@ func request_entity_attack(target_uuid: String, damage_position: Vector3, damage
         bool(target_entity.disabled),
         float(Time.get_ticks_msec()) / 1000.0
     )
+
+
+func _find_attackable_entity_near_attack_position(damage_position: Vector3, attacker_position: Vector3):
+    if not _is_safe_vector3(damage_position) or not _is_safe_vector3(attacker_position):
+        return null
+
+    var best_entity = null
+    var best_distance_squared: float = 3.0 * 3.0
+    for child in _get_live_tracked_entities():
+        if not _is_syncable_entity_node(child):
+            continue
+        if not (child is Entity) or child is Player or is_remote_player_proxy(child):
+            continue
+        var entity := child as Entity
+        if entity.dead or entity.disabled or entity.direct_damage_cooldown:
+            continue
+        if not CoopCombatSync.is_attack_within_reach(attacker_position, entity.global_position, ENTITY_ATTACK_REQUEST_MAX_DISTANCE + 1.5):
+            continue
+        var distance_squared: float = entity.global_position.distance_squared_to(damage_position)
+        if distance_squared >= best_distance_squared:
+            continue
+        best_distance_squared = distance_squared
+        best_entity = entity
+    return best_entity
+
+
+func _log_dedicated_entity_attack_reject(sender_id: int, reason: String, target_uuid: String) -> void:
+    if not dedicated_server_enabled:
+        return
+    print("[lucid-blocks-coop] Dedicated entity attack rejected peer=%s reason=%s target=%s" % [
+        sender_id,
+        reason,
+        target_uuid,
+    ])
 
 
 @rpc("any_peer", "call_remote", "reliable")
