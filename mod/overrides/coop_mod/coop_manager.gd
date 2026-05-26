@@ -5597,8 +5597,8 @@ func leave_session() -> void:
         disconnect_session()
         return
 
-    local_quit_in_progress = true
     if multiplayer.is_server():
+        local_quit_in_progress = true
         if is_local_player_fake_dead():
             _abort_host_respawn(false, false)
         clear_fake_death_override_after_shutdown = true
@@ -15320,7 +15320,8 @@ func _quit_guest_world_without_waiting_for_chunks() -> void:
     Ref.main.game_quit.emit()
     suppress_local_game_quit_session_shutdown = false
 
-    get_tree().paused = true
+    if get_tree().paused:
+        get_tree().paused = false
     if is_instance_valid(Ref.player):
         Ref.player.disabled = true
     if is_instance_valid(Ref.entity_spawner):
@@ -15331,6 +15332,7 @@ func _quit_guest_world_without_waiting_for_chunks() -> void:
     Ref.world.simulate_enabled = false
     Ref.world.load_enabled = false
     Ref.world.debug_stall = false
+    print("[lucid-blocks-coop] guest world leave: runtime disabled")
     await get_tree().process_frame
 
     if is_instance_valid(Ref.preserve_node_manager):
@@ -15339,17 +15341,22 @@ func _quit_guest_world_without_waiting_for_chunks() -> void:
         Ref.boss_manager.exit_game.call_deferred()
     if is_instance_valid(Ref.sun):
         Ref.sun.exit_game()
+    print("[lucid-blocks-coop] guest world leave: managers queued")
     await get_tree().process_frame
 
     for node in get_tree().get_nodes_in_group("delete_on_quit"):
         if is_instance_valid(node):
             node.queue_free.call_deferred()
+    print("[lucid-blocks-coop] guest world leave: cleanup nodes queued")
     await get_tree().process_frame
 
     Ref.world.clear()
+    print("[lucid-blocks-coop] guest world leave: world cleared")
     await get_tree().process_frame
     if is_instance_valid(Ref.main) and _object_has_property(Ref.main, "loaded"):
         Ref.main.set("loaded", false)
+    if get_tree().paused:
+        get_tree().paused = false
 
 
 func _teleport_local_player_near(target_position: Vector3) -> void:
