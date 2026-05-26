@@ -4275,6 +4275,9 @@ func _on_game_menu_quit_requested_coop() -> void:
     if local_quit_in_progress:
         print("[lucid-blocks-coop] leave already in progress")
         return
+    if _should_force_guest_leave_to_main_menu():
+        await _guest_save_and_quit_to_main_menu("Left server session")
+        return
     if not _has_live_peer():
         if is_instance_valid(Ref.main) and Ref.main.has_method("_on_game_menu_quit_requested"):
             await Ref.main._on_game_menu_quit_requested()
@@ -5576,7 +5579,7 @@ func leave_session() -> void:
     if local_quit_in_progress:
         print("[lucid-blocks-coop] leave already in progress")
         return
-    var should_kick_to_menu: bool = reconnect_pending or client_restore_in_progress or (reconnect_overlay != null and reconnect_overlay.visible)
+    var should_kick_to_menu: bool = _should_force_guest_leave_to_main_menu()
     reconnect_pending = false
     reconnect_attempt_count = 0
     reconnect_retry_timer = 0.0
@@ -14864,6 +14867,7 @@ func _on_connection_failed() -> void:
         status_message = "Reconnect failed"
         _update_status_text()
         reconnect_retry_timer = AUTO_RECONNECT_INTERVAL
+        _install_game_menu_quit_hook()
         _set_reconnect_overlay_visible(true)
         return
 
@@ -14951,6 +14955,16 @@ func _is_loaded_world_server_only() -> bool:
     return bool(Ref.save_file_manager.loaded_file_register.get_data(SERVER_WORLD_ONLY_KEY, false))
 
 
+func _should_force_guest_leave_to_main_menu() -> bool:
+    if multiplayer.is_server():
+        return false
+    if reconnect_pending or client_restore_in_progress:
+        return true
+    if reconnect_overlay != null and reconnect_overlay.visible:
+        return true
+    return is_instance_valid(Ref.world) and bool(Ref.world.load_enabled) and _is_loaded_world_server_only()
+
+
 func _enforce_server_only_world_access() -> void:
     if dedicated_server_enabled or _has_live_peer() or not _is_loaded_world_server_only():
         return
@@ -15030,6 +15044,7 @@ func _begin_reconnect_flow(reason: String) -> void:
     reconnect_reason = reason
     status_message = reason
     _update_status_text()
+    _install_game_menu_quit_hook()
     _set_reconnect_overlay_visible(true)
     if _can_sample_player():
         _reset_local_player_motion()
