@@ -65,7 +65,7 @@ static func _ensure_cache() -> void:
         var avatar_id: String = _normalize_avatar_id(str(loaded_entry.get("id", folder_name)))
         loaded_entry["id"] = avatar_id
         _cache[avatar_id] = _merge_entry_defaults(loaded_entry)
-        if avatar_id != DEFAULT_AVATAR_ID:
+        if avatar_id != DEFAULT_AVATAR_ID and not _ordered_ids.has(avatar_id):
             _ordered_ids.append(avatar_id)
 
 
@@ -83,7 +83,17 @@ static func _load_avatar_dir(folder_name: String) -> Dictionary:
     var model_field: String = str(manifest.get("model", "")).strip_edges()
     var model_path: String = ""
     if model_field != "":
-        model_path = model_field if model_field.begins_with("res://") else folder_path + "/" + model_field
+        # Reject path traversal / backslash injection in manifest values.
+        if model_field.contains("..") or model_field.contains("\\"):
+            return {}
+        if model_field.begins_with("res://"):
+            # Allow res:// only inside the coop_mod or addons trees to keep
+            # avatar manifests from referencing arbitrary game resources.
+            if not (model_field.begins_with("res://coop_mod/") or model_field.begins_with("res://addons/")):
+                return {}
+            model_path = model_field
+        else:
+            model_path = folder_path + "/" + model_field
     else:
         for candidate_variant in [
             folder_path + "/model.glb",

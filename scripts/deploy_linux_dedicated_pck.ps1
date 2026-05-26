@@ -4,8 +4,12 @@ param(
     [string]$HostName = "",
     [string]$UserName = "",
     [string]$Password = "",
+    # Path to a PuTTY .ppk private key. Strongly preferred over -Password
+    # because plink/pscp's -pw flag exposes the password on the local
+    # process command-line and in any error logs.
+    [string]$PrivateKeyPath = "",
     [string]$RemoteRoot = "/opt/lucid-blocks-server",
-    [string]$ServiceName = "lucid-blocks-linux-dedicated.service",
+    [string]$ServiceName = "lucid-blocks-dedicated.service",
     [int]$ReadinessTimeoutSec = 180,
     [string]$PlinkPath = "",
     [string]$PscpPath = "",
@@ -13,6 +17,31 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# Returns a single-quoted Bash literal for `value`. Inside the heredoc we
+# embed remote-side variables with `var='...'`; any single quote in the
+# original value would otherwise close the literal early and let the
+# attacker / accidental user input inject shell commands.
+function ConvertTo-BashSingleQuoted([string]$value) {
+    if ($null -eq $value) { return "''" }
+    return "'" + ($value -replace "'", "'\''") + "'"
+}
+
+# Build the auth argument list once. -i is preferred; -pw is only used as
+# fallback and emits a warning so operators see they should rotate to keys.
+function Get-PuttyAuthArgs() {
+    if (-not [string]::IsNullOrWhiteSpace($script:PrivateKeyPath)) {
+        if (-not (Test-Path $script:PrivateKeyPath)) {
+            throw "PrivateKeyPath not found: $script:PrivateKeyPath"
+        }
+        return @("-batch", "-i", $script:PrivateKeyPath)
+    }
+    if ([string]::IsNullOrWhiteSpace($script:Password)) {
+        throw "Either -PrivateKeyPath or -Password (deploy.txt) must be provided."
+    }
+    Write-Warning "Using -pw for plink/pscp leaks the password to local process list. Pass -PrivateKeyPath <ppk> instead."
+    return @("-batch", "-pw", $script:Password)
+}
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if ([string]::IsNullOrWhiteSpace($PckPath)) {
@@ -46,28 +75,32 @@ if (-not [string]::IsNullOrWhiteSpace($DeployFile)) {
     }
 }
 
-foreach ($required in @("HostName", "UserName", "Password")) {
+foreach ($required in @("HostName", "UserName")) {
     if ([string]::IsNullOrWhiteSpace((Get-Variable $required).Value)) {
         throw "$required is required. Pass it explicitly or use -DeployFile."
     }
 }
 
+$authArgs = Get-PuttyAuthArgs
+
 $remotePrimary = "$RemoteRoot/game/mods/lucid-blocks-multiplayer.pck"
 $target = "${UserName}@${HostName}:$remotePrimary"
 
 Write-Host "Uploading multiplayer PCK to primary mod directory..."
-& $PscpPath -batch -pw $Password $PckPath $target | Out-Host
+& $PscpPath @authArgs $PckPath $target | Out-Host
 if ($LASTEXITCODE -ne 0) {
     throw "pscp failed with exit code $LASTEXITCODE"
 }
 
-$restartLine = if ($SkipRestart) { "echo SKIP_RESTART" } else { "systemctl restart '$ServiceName'" }
+$remoteRootQuoted = ConvertTo-BashSingleQuoted $RemoteRoot
+$serviceNameQuoted = ConvertTo-BashSingleQuoted $ServiceName
+$restartLine = if ($SkipRestart) { "echo SKIP_RESTART" } else { "systemctl restart $serviceNameQuoted" }
 $readinessTimeout = [Math]::Max(15, $ReadinessTimeoutSec)
 
 $remoteScript = @"
 set -e
-remote_root='$RemoteRoot'
-service_name='$ServiceName'
+remote_root=$remoteRootQuoted
+service_name=$serviceNameQuoted
 primary_mod_dir="`$remote_root/game/mods"
 nested_mod_dir="`$remote_root/game/lucid-blocks/mods"
 mkdir -p "`$primary_mod_dir" "`$nested_mod_dir"
@@ -148,12 +181,13 @@ try {
     $remoteScriptLf = $remoteScript -replace "`r`n", "`n"
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($tempScript.FullName, $remoteScriptLf, $utf8NoBom)
-    & $PscpPath -batch -pw $Password $tempScript.FullName "${UserName}@${HostName}:$remoteScriptPath" | Out-Host
+    & $PscpPath @authArgs $tempScript.FullName "${UserName}@${HostName}:$remoteScriptPath" | Out-Host
     if ($LASTEXITCODE -ne 0) {
         throw "remote script upload failed with exit code $LASTEXITCODE"
     }
 
-    & $PlinkPath -batch -ssh -pw $Password "${UserName}@${HostName}" "bash '$remoteScriptPath'; rc=`$?; rm -f '$remoteScriptPath'; exit `$rc" | Out-Host
+    $remoteScriptPathQuoted = ConvertTo-BashSingleQuoted $remoteScriptPath
+    & $PlinkPath @authArgs -ssh "${UserName}@${HostName}" "bash $remoteScriptPathQuoted; rc=`$?; rm -f $remoteScriptPathQuoted; exit `$rc" | Out-Host
     if ($LASTEXITCODE -ne 0) {
         throw "remote deploy/readiness failed with exit code $LASTEXITCODE"
     }

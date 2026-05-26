@@ -153,7 +153,25 @@ The executable path can differ between installs. Check it with:
 find /opt/lucid-blocks-server/game -iname "lucid-blocks*.exe" -o -iname "lucid-blocks*.x86_64"
 ```
 
-## 6. Start The Server
+## 6. Firewall
+
+Open only the ports you actually expose:
+
+```bash
+# Game UDP (dedicated). Default 24667.
+sudo ufw allow 24667/udp comment 'lucid-blocks game UDP'
+# Status UDP for ping/admin tools. Default 24668.
+sudo ufw allow 24668/udp comment 'lucid-blocks status UDP'
+# Master registry HTTP. Only if you run the master on the same host.
+# When you do, prefer binding it behind a reverse proxy / TLS terminator.
+sudo ufw allow 8088/tcp comment 'lucid-blocks master registry'
+```
+
+If the master registry runs on the same VPS, restrict the heartbeat token
+file (`/opt/lucid-blocks-master/registry.token`) to mode 600 and never
+publish `master.env` / `heartbeat.env` publicly.
+
+## 7. Start The Server
 
 ```bash
 sudo systemctl daemon-reload

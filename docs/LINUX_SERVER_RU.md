@@ -153,7 +153,25 @@ WantedBy=multi-user.target
 find /opt/lucid-blocks-server/game -iname "lucid-blocks*.exe" -o -iname "lucid-blocks*.x86_64"
 ```
 
-## 6. Запуск
+## 6. Файрвол
+
+Открой только те порты, которые реально публикуешь:
+
+```bash
+# Игровой UDP (dedicated). По умолчанию 24667.
+sudo ufw allow 24667/udp comment 'lucid-blocks game UDP'
+# Status UDP для пинга/админ-тулзов. По умолчанию 24668.
+sudo ufw allow 24668/udp comment 'lucid-blocks status UDP'
+# HTTP мастер-реестра. Только если ты запускаешь мастер на той же машине.
+# Для прод-инсталляций лучше выставить за TLS-прокси.
+sudo ufw allow 8088/tcp comment 'lucid-blocks master registry'
+```
+
+Если мастер-реестр живёт на той же VPS, держи `registry.token` в
+`/opt/lucid-blocks-master` с правами 600 и не публикуй `master.env` /
+`heartbeat.env`.
+
+## 7. Запуск
 
 ```bash
 sudo systemctl daemon-reload

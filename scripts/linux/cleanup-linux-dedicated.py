@@ -3,7 +3,7 @@ import os
 import signal
 import time
 
-SERVICE_CGROUP = "/system.slice/lucid-blocks-linux-dedicated.service"
+SERVICE_CGROUP = "/system.slice/lucid-blocks-dedicated.service"
 SERVER_PREFIX = "/opt/lucid-blocks-server/proton-prefix-linux-dedicated"
 PROTON_DIR = "/opt/steam-tools/proton-ge/GE-Proton10-34"
 

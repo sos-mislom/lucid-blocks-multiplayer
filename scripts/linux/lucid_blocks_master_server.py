@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import os
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -12,6 +13,10 @@ TOKEN = os.environ.get("LB_MASTER_TOKEN", "").strip()
 DATA_PATH = os.environ.get("LB_MASTER_DATA", "/opt/lucid-blocks-master/servers.json")
 TTL_SECONDS = int(os.environ.get("LB_MASTER_TTL", "90"))
 MAX_BODY_BYTES = 64 * 1024
+# Defaults to "*" for backwards compatibility, but operators are encouraged
+# to set LB_MASTER_CORS_ORIGIN to their actual front-end origin or "" to
+# disable the CORS header entirely.
+CORS_ORIGIN = os.environ.get("LB_MASTER_CORS_ORIGIN", "*").strip()
 
 LOCK = threading.Lock()
 
@@ -107,14 +112,20 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        if CORS_ORIGIN:
+            self.send_header("Access-Control-Allow-Origin", CORS_ORIGIN)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
     def _authorized(self) -> bool:
+        # Security: a missing/empty LB_MASTER_TOKEN now FAILS auth.
+        # Previously this returned True when no token was configured, which
+        # silently disabled authentication if the operator forgot to set the
+        # env var. Operators must set LB_MASTER_TOKEN to a non-empty value
+        # before the master will accept heartbeats.
         if not TOKEN:
-            return True
+            return False
         header = self.headers.get("Authorization", "")
         return header == "Bearer " + TOKEN
 
@@ -180,6 +191,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    if not TOKEN:
+        sys.stderr.write(
+            "FATAL: LB_MASTER_TOKEN is empty. Set it to a non-empty secret\n"
+            "       (e.g. via /etc/lucid-blocks-master.env) before starting\n"
+            "       the master server. Anonymous heartbeats are no longer\n"
+            "       accepted.\n"
+        )
+        sys.exit(1)
     os.makedirs(os.path.dirname(DATA_PATH), exist_ok=True)
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print("Lucid Blocks master registry listening on %s:%s" % (HOST, PORT), flush=True)

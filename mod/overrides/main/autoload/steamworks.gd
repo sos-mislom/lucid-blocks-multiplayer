@@ -182,10 +182,12 @@ func _on_item_downloaded(result: int, file_id: int, download_app_id: int) -> voi
     file.close()
     if parse_result == null:
         printerr("Register file invalid")
+        qualia_downloaded.emit(false)
         return
     var data: Variant = JSON.to_native(parse_result)
     if data == null or not "uuid" in data:
         printerr("Register file invalid")
+        qualia_downloaded.emit(false)
         return
     var register: SaveFileRegister = SaveFileRegister.new()
     register.is_dimensional = false

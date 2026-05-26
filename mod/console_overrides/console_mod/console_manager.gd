@@ -41,17 +41,17 @@ func execute_command(raw_text: String) -> void:
     if text == "":
         return
 
-	var parts: PackedStringArray = text.split(" ", false)
-	var command: String = parts[0].to_lower()
-	match command:
-		"/whoami", "/ping", "/coords", "/pos", "/position", "/server-commands", "/server_commands", "/command-policy", "/command_policy", "/tp", "/host", "/lan", "/join", "/steam_host", "/steam-host", "/steam_invite", "/steam-invite", "/invite", "/steam_join", "/steam-join", "/home":
-			if _forward_to_coop_command(text):
-				return
-			_set_status("Multiplayer commands are unavailable")
-		"/char-select", "/charselect", "/characters", "/avatar", "/default", "/default_blocky", "/white":
-			if _forward_to_coop_command(text):
-				return
-			_set_status("Multiplayer avatar commands are unavailable")
+    var parts: PackedStringArray = text.split(" ", false)
+    var command: String = parts[0].to_lower()
+    match command:
+        "/whoami", "/ping", "/coords", "/pos", "/position", "/server-commands", "/server_commands", "/command-policy", "/command_policy", "/tp", "/host", "/lan", "/join", "/steam_host", "/steam-host", "/steam_invite", "/steam-invite", "/invite", "/steam_join", "/steam-join", "/home":
+            if _forward_to_coop_command(text):
+                return
+            _set_status("Multiplayer commands are unavailable")
+        "/char-select", "/charselect", "/characters", "/avatar", "/default", "/default_blocky", "/white":
+            if _forward_to_coop_command(text):
+                return
+            _set_status("Multiplayer avatar commands are unavailable")
         "/help":
             _execute_help_command()
         "/give":
@@ -115,15 +115,15 @@ func get_command_autocomplete_entries(raw_text: String) -> Array:
     if has_space:
         argument_body = body.substr(command_body.length() + 1).lstrip(" \t\r\n")
 
-	if not has_space:
-		return _get_root_command_autocomplete_entries(command_body)
+    if not has_space:
+        return _get_root_command_autocomplete_entries(command_body)
 
-	if _is_coop_forwarded_command_body(command_body):
-		return _get_coop_autocomplete_entries(text)
+    if _is_coop_forwarded_command_body(command_body):
+        return _get_coop_autocomplete_entries(text)
 
-	match command_body:
-		"char-select", "charselect", "characters", "avatar":
-			return _get_avatar_command_autocomplete_entries(command_body, argument_body)
+    match command_body:
+        "char-select", "charselect", "characters", "avatar":
+            return _get_avatar_command_autocomplete_entries(command_body, argument_body)
         "give":
             return _get_give_command_autocomplete_entries(argument_body)
         "gamemode", "gm":
@@ -142,33 +142,36 @@ func get_command_autocomplete_entries(raw_text: String) -> Array:
 
 
 func _execute_help_command() -> void:
-	_set_status("Console commands: /help /give /gamemode /time /weather /kill /fly /spawn /spawnlist /wand /pos1 /pos2 /sel /fill /clear /floor /flat /border /peaceful /daylock /builder_setup /list /char-select /default | Multiplayer: /whoami /ping /coords /tp /host /join /home /server-commands")
+    _set_status("Console commands: /help /give /gamemode /time /weather /kill /fly /spawn /spawnlist /wand /pos1 /pos2 /sel /fill /clear /floor /flat /border /peaceful /daylock /builder_setup /list /char-select /default | Multiplayer: /whoami /ping /coords /tp /host /join /home /server-commands")
 
 
 func _forward_to_coop_command(text: String) -> bool:
-	if Ref.coop_manager == null or not Ref.coop_manager.has_method("execute_command"):
-		return false
-	Ref.coop_manager.execute_command(text)
-	return true
+    if Ref.coop_manager == null or not Ref.coop_manager.has_method("execute_command"):
+        return false
+    Ref.coop_manager.execute_command(text)
+    return true
 
 
 func _is_coop_forwarded_command_body(command_body: String) -> bool:
-	return [
-		"whoami", "ping", "coords", "pos", "position",
-		"server-commands", "server_commands", "command-policy", "command_policy",
-		"tp", "host", "lan", "join",
-		"steam_host", "steam-host", "steam_invite", "steam-invite", "invite", "steam_join", "steam-join",
-		"home",
-	].has(command_body)
+    return [
+        "whoami", "ping", "coords", "pos", "position",
+        "server-commands", "server_commands", "command-policy", "command_policy",
+        "tp", "host", "lan", "join",
+        "steam_host", "steam-host", "steam_invite", "steam-invite", "invite", "steam_join", "steam-join",
+        "home",
+    ].has(command_body)
 
 
 func _get_coop_autocomplete_entries(text: String) -> Array:
-	if Ref.coop_manager == null or not Ref.coop_manager.has_method("get_command_autocomplete_entries"):
-		return []
-	return Ref.coop_manager.get_command_autocomplete_entries(text)
+    if Ref.coop_manager == null or not Ref.coop_manager.has_method("get_command_autocomplete_entries"):
+        return []
+    return Ref.coop_manager.get_command_autocomplete_entries(text)
 
 
 func _execute_give_command(parts: PackedStringArray) -> void:
+    if not _is_local_player_allowed_console_mutators("/give"):
+        _set_status("/give is disabled by server command policy")
+        return
     if parts.size() < 2:
         _set_status("Usage: /give [amount] <item_name_or_id>")
         return
@@ -211,6 +214,9 @@ func _execute_give_command(parts: PackedStringArray) -> void:
 
 
 func _execute_gamemode_command(parts: PackedStringArray) -> void:
+    if not _is_local_player_allowed_console_mutators("/gamemode"):
+        _set_status("/gamemode is disabled by server command policy")
+        return
     if parts.size() < 2:
         _set_status("Usage: /gamemode <c|s>")
         return
@@ -314,6 +320,9 @@ func _execute_weather_command(parts: PackedStringArray) -> void:
 
 
 func _execute_kill_command() -> void:
+    if not _is_local_player_allowed_console_mutators("/kill"):
+        _set_status("/kill is disabled by server command policy")
+        return
     if not is_instance_valid(Ref.player):
         _set_status("No player")
         return
@@ -325,6 +334,9 @@ func _execute_kill_command() -> void:
 
 
 func _execute_fly_command() -> void:
+    if not _is_local_player_allowed_console_mutators("/fly"):
+        _set_status("/fly is disabled by server command policy")
+        return
     if not is_instance_valid(Ref.player):
         _set_status("No player")
         return
@@ -1043,20 +1055,20 @@ func _parse_on_off(value: String, current: bool) -> bool:
 
 
 func _get_root_command_autocomplete_entries(query: String) -> Array:
-	var commands: Array = [
-		{"command": "/help", "hint": "List console commands"},
-		{"command": "/whoami", "hint": "Show your server-side player state"},
-		{"command": "/ping", "hint": "Ping the server"},
-		{"command": "/coords", "hint": "Show local and server coordinates"},
-		{"command": "/tp", "hint": "Teleport to a player or coordinates"},
-		{"command": "/host", "hint": "Host a LAN session"},
-		{"command": "/join", "hint": "Join ip and port"},
-		{"command": "/home", "hint": "Teleport to the server home point"},
-		{"command": "/server-commands", "hint": "Show or edit server command policy"},
-		{"command": "/give", "hint": "Give yourself an item"},
-		{"command": "/gamemode", "hint": "Session creative or survival"},
-		{"command": "/time", "hint": "Change/query world time"},
-		{"command": "/weather", "hint": "Change weather"},
+    var commands: Array = [
+        {"command": "/help", "hint": "List console commands"},
+        {"command": "/whoami", "hint": "Show your server-side player state"},
+        {"command": "/ping", "hint": "Ping the server"},
+        {"command": "/coords", "hint": "Show local and server coordinates"},
+        {"command": "/tp", "hint": "Teleport to a player or coordinates"},
+        {"command": "/host", "hint": "Host a LAN session"},
+        {"command": "/join", "hint": "Join ip and port"},
+        {"command": "/home", "hint": "Teleport to the server home point"},
+        {"command": "/server-commands", "hint": "Show or edit server command policy"},
+        {"command": "/give", "hint": "Give yourself an item"},
+        {"command": "/gamemode", "hint": "Session creative or survival"},
+        {"command": "/time", "hint": "Change/query world time"},
+        {"command": "/weather", "hint": "Change weather"},
         {"command": "/kill", "hint": "Kill local player"},
         {"command": "/fly", "hint": "Toggle fly mode"},
         {"command": "/spawn", "hint": "Spawn a mob for testing"},
@@ -1227,6 +1239,23 @@ func _make_autocomplete_entry(insert_text: String, display_text: String, hint_te
 
 func _can_host_modify_world() -> bool:
     return not multiplayer.has_multiplayer_peer() or multiplayer.is_server()
+
+
+# True when the local player is allowed to run console mutators (creative
+# gamemode, /give, /kill, /fly). Guests in a coop session can only run them
+# when the host's server command policy permits the matching coop command,
+# or when they have been granted an admin role on the server.
+func _is_local_player_allowed_console_mutators(command_label: String) -> bool:
+    if _can_host_modify_world():
+        return true
+    if Ref.coop_manager == null:
+        return false
+    var coop = Ref.coop_manager
+    if coop.has_method("_is_local_command_admin") and coop._is_local_command_admin():
+        return true
+    if coop.has_method("_is_command_allowed_by_server_policy"):
+        return bool(coop._is_command_allowed_by_server_policy(command_label))
+    return false
 
 
 func _refresh_inventory_screen() -> void:

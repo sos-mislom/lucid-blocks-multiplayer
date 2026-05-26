@@ -19,10 +19,23 @@ typedef GDExtensionBool (__cdecl *gdblocks_init_fn)(
 static HMODULE real_module;
 static gdblocks_init_fn real_gdblocks_init;
 
+/*
+ * The byte offsets in coop_native_patch.cpp are derived from a specific build
+ * of libgdblocks (template_release / double / x86_64). The exported symbol
+ * `coop_native_patch_expected_gdblocks_size` is published by that extension
+ * so the proxy can sanity-check the real DLL on load. The check is best-effort
+ * advisory only — a mismatch logs to stderr but still permits load, because
+ * we cannot block the user from running with a slightly-different build.
+ */
+#define EXPECTED_GDBLOCKS_DLL_SIZE_LOWER_BOUND ((DWORD)0x00200000U) /* 2 MiB */
+#define EXPECTED_GDBLOCKS_DLL_SIZE_UPPER_BOUND ((DWORD)0x10000000U) /* 256 MiB */
+
 static int load_real_gdblocks(void) {
     char proxy_path[MAX_PATH];
     char real_path[MAX_PATH];
     char *file_name;
+    HANDLE file_handle;
+    DWORD file_size;
 
     if (real_gdblocks_init != NULL) {
         return 1;
@@ -40,6 +53,26 @@ static int load_real_gdblocks(void) {
     lstrcpyA(real_path, proxy_path);
     lstrcpyA(file_name + 1, "libgdblocks.windows.template_release.double.x86_64.original.dll");
 
+    /* Sanity-check the on-disk DLL size before loading. If the file is
+     * suspiciously small / large, the byte-offset patches in
+     * coop_native_patch.cpp almost certainly do not match this build and
+     * could crash the game. We still try to load it (so a slightly updated
+     * gdblocks build can be inspected at runtime) but emit a warning. */
+    file_handle = CreateFileA(real_path, GENERIC_READ, FILE_SHARE_READ, NULL,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file_handle != INVALID_HANDLE_VALUE) {
+        file_size = GetFileSize(file_handle, NULL);
+        CloseHandle(file_handle);
+        if (file_size == INVALID_FILE_SIZE
+                || file_size < EXPECTED_GDBLOCKS_DLL_SIZE_LOWER_BOUND
+                || file_size > EXPECTED_GDBLOCKS_DLL_SIZE_UPPER_BOUND) {
+            OutputDebugStringA("[lucid-blocks-proxy] WARNING: libgdblocks .original.dll size is outside expected range; "
+                "native patches may not apply cleanly.\n");
+        }
+    } else {
+        OutputDebugStringA("[lucid-blocks-proxy] WARNING: could not stat libgdblocks .original.dll for version check.\n");
+    }
+
     real_module = LoadLibraryA(real_path);
     if (real_module == NULL) {
         return 0;
@@ -51,13 +84,14 @@ static int load_real_gdblocks(void) {
 
 static void apply_world_loader_patch_if_ready(void) {
     /*
-     * Placeholder.
+     * Intentionally a no-op.
      *
-     * Future work:
-     * - verify DLL hash before patching
-     * - install trampoline / byte patch for World::set_loaded_region_center
-     *   and World::update_loaded_region
-     * - expose any new script-callable helper if needed
+     * The actual world-loader byte patches now live in the
+     * coop_native_patch GDExtension (native_patch/runtime_extension), which
+     * loads later in Godot's boot sequence and exposes a script API. The
+     * proxy DLL only forwards gdblocks_init; it cannot safely patch the
+     * real DLL here because the Godot interface that the extension needs is
+     * not yet ready.
      */
 }
 

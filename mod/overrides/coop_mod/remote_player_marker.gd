@@ -1110,10 +1110,15 @@ func _apply_placeholder_palette() -> void:
 # ---------------------------------------------------------------------------
 
 func _rebuild_held_item_visual() -> void:
+    # Held item visualisation on remote avatars is intentionally disabled in
+    # the current MVP. Avatar manifests can request it via "show_held_items"
+    # but no remote-rendering path has been validated yet, so we only tear
+    # down any leftover visual that earlier code may have spawned. If/when a
+    # safe renderer is added, branch here on `avatar_entry.show_held_items`
+    # before recreating the mesh.
     if held_item_visual != null:
         held_item_visual.queue_free()
         held_item_visual = null
-    return
 
 
 # ---------------------------------------------------------------------------

@@ -43,12 +43,9 @@ var selected_suggestion_index: int = -1
 var COMMAND_REGISTRY: Dictionary = {
     "/help": {"desc": "Show list of commands", "args": []},
     "/tp": {"desc": "Teleport to player or coordinates", "args": ["<target>", "[destination]"]},
-    "/char-select": {"desc": "Open character select menu", "args": []},
+    "/avatar": {"desc": "Change your player avatar", "args": ["<id>"]},
     "/host": {"desc": "Host a multiplayer server", "args": ["[port]"]},
     "/join": {"desc": "Join a multiplayer server", "args": ["<ip>", "[port]"]},
-    "/steam_host": {"desc": "Host through Steam", "args": []},
-    "/steam_invite": {"desc": "Open Steam invite dialog", "args": []},
-    "/steam_join": {"desc": "Join a Steam lobby", "args": ["<lobby_id>"]},
     "/pocket": {"desc": "Travel to a pocket dimension", "args": []},
     "/visit": {"desc": "Visit a player's pocket dimension", "args": []}
 }
@@ -101,7 +98,10 @@ func _input(event: InputEvent) -> void:
     if event.unicode == 47 or event.keycode == KEY_SLASH:
         _open_chat("/")
         get_viewport().set_input_as_handled()
-    elif event.keycode == KEY_N or event.keycode == KEY_ENTER:
+    elif _is_quick_chat_key(event) and _should_use_multiplayer_quick_chat():
+        _open_chat("")
+        get_viewport().set_input_as_handled()
+    elif event.keycode == KEY_ENTER:
         _open_chat("")
         get_viewport().set_input_as_handled()
 
@@ -265,6 +265,19 @@ func _can_open_chat() -> bool:
         and Ref.world.load_enabled \
         and get_viewport().gui_get_focus_owner() == null
 
+
+func _is_quick_chat_key(event: InputEventKey) -> bool:
+    return event.keycode == KEY_H \
+        or event.physical_keycode == KEY_H \
+        or event.unicode == 1053 \
+        or event.unicode == 1085
+
+
+func _should_use_multiplayer_quick_chat() -> bool:
+    return Ref.coop_manager != null \
+        and Ref.coop_manager.has_method("has_active_session") \
+        and Ref.coop_manager.has_active_session()
+
 func _is_open() -> bool:
     return input_panel != null and input_panel.visible
 
@@ -400,12 +413,7 @@ func _refresh_suggestions() -> void:
         if text != "" and active_suggestions.size() > 0:
             var selected = active_suggestions[selected_suggestion_index]
             var insert_text = str(selected.get("insert", ""))
-            
-            var resulting_text = insert_text
-            if not insert_text.begins_with("/") and not resulting_text.begins_with(text) and not text.ends_with(" "):
-                var last_space = text.rfind(" ")
-                if last_space != -1:
-                    resulting_text = text.substr(0, last_space + 1) + insert_text
+            var resulting_text = _resolve_suggestion_insert_text(insert_text, text)
             
             if resulting_text.to_lower().begins_with(text.to_lower()) and resulting_text.length() > text.length():
                 var completion = resulting_text.substr(text.length())
@@ -470,12 +478,7 @@ func _cycle_suggestion(step: int) -> void:
         return
         
     var text = input.text
-    var resulting_text = insert_text
-    
-    if not insert_text.begins_with("/") and not resulting_text.to_lower().begins_with(text.to_lower()) and not text.ends_with(" "):
-        var last_space = text.rfind(" ")
-        if last_space != -1:
-            resulting_text = text.substr(0, last_space + 1) + insert_text
+    var resulting_text = _resolve_suggestion_insert_text(insert_text, text)
             
     if not resulting_text.ends_with(" "):
         resulting_text += " "
@@ -498,12 +501,7 @@ func _apply_suggestion(index: int, preserve_focus: bool = true) -> void:
         return
         
     var text = input.text
-    var resulting_text = insert_text
-    
-    if not insert_text.begins_with("/") and not resulting_text.to_lower().begins_with(text.to_lower()) and not text.ends_with(" "):
-        var last_space = text.rfind(" ")
-        if last_space != -1:
-            resulting_text = text.substr(0, last_space + 1) + insert_text
+    var resulting_text = _resolve_suggestion_insert_text(insert_text, text)
             
     if not resulting_text.ends_with(" "):
         resulting_text += " "
@@ -511,6 +509,18 @@ func _apply_suggestion(index: int, preserve_focus: bool = true) -> void:
     _set_input_text(resulting_text, true)
     if preserve_focus:
         input.grab_focus()
+
+func _resolve_suggestion_insert_text(insert_text: String, current_text: String) -> String:
+    if insert_text == "":
+        return ""
+    if insert_text.begins_with("/"):
+        return insert_text
+    if insert_text.to_lower().begins_with(current_text.to_lower()) or current_text.ends_with(" "):
+        return insert_text
+    var last_space = current_text.rfind(" ")
+    if last_space == -1:
+        return insert_text
+    return current_text.substr(0, last_space + 1) + insert_text
 
 func _capture_coop_status_message(force: bool = false) -> void:
     var command_provider = _get_command_provider()

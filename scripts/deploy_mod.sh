@@ -7,7 +7,7 @@ ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 
 DEFAULT_GAME_EXE="$HOME/.local/share/Steam/steamapps/common/lucid-blocks/lucid-blocks/lucid-blocks.exe"
 LEGACY_GAME_EXE="/data/SteamLibrary/steamapps/common/lucid-blocks/lucid-blocks/lucid-blocks.exe"
-DEFAULT_MOD_NAME="lucid-blocks-coop.pck"
+DEFAULT_MOD_NAME="lucid-blocks-multiplayer.pck"
 DEFAULT_PROJECT_DIR="$ROOT_DIR/mod/overrides"
 DEFAULT_DIST_DIR="$ROOT_DIR/dist"
 

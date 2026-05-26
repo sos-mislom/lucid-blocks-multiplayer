@@ -20,6 +20,17 @@ deploy.txt
 deploy*.txt
 secrets/
 private/
+
+# Master registry / heartbeat operator secrets (never commit)
+registry.token
+master.env
+heartbeat.env
+servers.json
+lucid_blocks_coop_config.json
+
+# Decompiled / vendored game source — must NEVER be redistributed
+source_code/
+lucid-blocks-decompiled/
 dist/*.pck
 dist/*.zip
 dist/.tmp-*
@@ -29,9 +40,7 @@ mod/overrides/.godot/
 mod/chat_overrides/.godot/
 mod/console_overrides/.godot/
 mod/multiplayer_overrides/.godot/
-!dist/lucid-blocks-coop-test.pck
 !dist/lucid-blocks-multiplayer.pck
 !dist/lucid-blocks-chat.pck
 !dist/lucid-blocks-console.pck
 !dist/zzz-lucid-blocks-command-chat.pck
-lucid-blocks-decompiled

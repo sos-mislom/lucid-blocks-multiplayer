@@ -445,7 +445,10 @@ static bool patch_dedicated_no_render(HMODULE module, bool enabled) {
             if (current != 0xc3) {
                 continue;
             }
-            if (!patch_bytes(address, site.expected_prefix.data(), 1)) {
+            // Defensive: restore the entire saved prologue, not just byte 0.
+            // If any other component clobbered bytes 1..N while the patch was
+            // active, this returns the function to a known-good state.
+            if (!patch_bytes(address, site.expected_prefix.data(), site.prefix_length)) {
                 return false;
             }
         }
@@ -615,13 +618,18 @@ static void store_world_active_region_centers(const void *world, const Array &ce
 }
 
 static void clear_world_active_region_centers_internal(const void *world) {
-    g_active_region_center_count = 0;
-
     if (world == nullptr) {
+        // Caller asked to clear "everything not tied to a world" — wipe the
+        // global fallback list.
+        g_active_region_center_count = 0;
         return;
     }
     std::lock_guard<std::mutex> lock(g_world_center_lock);
     g_world_active_region_centers.erase(world);
+    // Intentionally do NOT touch g_active_region_center_count here. That
+    // global fallback list is shared across worlds; clearing it because one
+    // world is shutting down would silently disable the radius check for
+    // every other world that still relies on it.
 }
 
 static void clear_active_region_centers_internal() {
@@ -661,11 +669,41 @@ static bool install_multi_region_hooks_internal(HMODULE module) {
         reinterpret_cast<const void *>(&coop_simulate_radius_hook_2),
     };
 
+    // Snapshot original bytes BEFORE writing so we can roll back if any
+    // later site fails to patch.
+    struct PatchedSite {
+        uint8_t *address;
+        size_t length;
+        std::array<uint8_t, 64> original_bytes;
+    };
+    std::vector<PatchedSite> successfully_patched;
+    successfully_patched.reserve(std::size(MULTI_REGION_HOOK_SITES));
+
     for (size_t i = 0; i < std::size(MULTI_REGION_HOOK_SITES); i++) {
         const MultiRegionHookSite &site = MULTI_REGION_HOOK_SITES[i];
-        if (!write_absolute_jump(resolve_rva(module, site.patch_rva), hook_entrypoints[i], site.patch_length)) {
+        uint8_t *address = resolve_rva(module, site.patch_rva);
+        if (address == nullptr || site.patch_length > 64) {
+            // Roll back all previously patched sites before failing.
+            for (auto it = successfully_patched.rbegin(); it != successfully_patched.rend(); ++it) {
+                patch_bytes(it->address, it->original_bytes.data(), it->length);
+            }
             return false;
         }
+        PatchedSite snapshot;
+        snapshot.address = address;
+        snapshot.length = site.patch_length;
+        std::memcpy(snapshot.original_bytes.data(), address, site.patch_length);
+
+        if (!write_absolute_jump(address, hook_entrypoints[i], site.patch_length)) {
+            // Restore this site (write_absolute_jump may have written a
+            // partial trampoline) and every previously patched site.
+            patch_bytes(address, snapshot.original_bytes.data(), site.patch_length);
+            for (auto it = successfully_patched.rbegin(); it != successfully_patched.rend(); ++it) {
+                patch_bytes(it->address, it->original_bytes.data(), it->length);
+            }
+            return false;
+        }
+        successfully_patched.push_back(snapshot);
     }
 
     g_multi_region_hooks_installed = true;

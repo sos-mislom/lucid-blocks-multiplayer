@@ -3,6 +3,9 @@ param(
     [string]$HostName = "",
     [string]$UserName = "",
     [string]$Password = "",
+    # Prefer key-based auth: -pw exposes the password in the local
+    # process command-line. Pass a PuTTY .ppk path instead.
+    [string]$PrivateKeyPath = "",
     [string]$RemoteRoot = "/opt/lucid-blocks-master",
     [string]$MasterServiceName = "lucid-blocks-master-registry.service",
     [string]$HeartbeatServiceName = "lucid-blocks-server-heartbeat.service",
@@ -15,6 +18,25 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function ConvertTo-BashSingleQuoted([string]$value) {
+    if ($null -eq $value) { return "''" }
+    return "'" + ($value -replace "'", "'\''") + "'"
+}
+
+function Get-PuttyAuthArgs() {
+    if (-not [string]::IsNullOrWhiteSpace($script:PrivateKeyPath)) {
+        if (-not (Test-Path $script:PrivateKeyPath)) {
+            throw "PrivateKeyPath not found: $script:PrivateKeyPath"
+        }
+        return @("-batch", "-i", $script:PrivateKeyPath)
+    }
+    if ([string]::IsNullOrWhiteSpace($script:Password)) {
+        throw "Either -PrivateKeyPath or -Password (deploy.txt) must be provided."
+    }
+    Write-Warning "Using -pw for plink/pscp leaks the password to local process list. Pass -PrivateKeyPath <ppk> instead."
+    return @("-batch", "-pw", $script:Password)
+}
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if ([string]::IsNullOrWhiteSpace($PlinkPath)) {
@@ -43,33 +65,43 @@ if (-not [string]::IsNullOrWhiteSpace($DeployFile)) {
     }
 }
 
-foreach ($required in @("HostName", "UserName", "Password")) {
+foreach ($required in @("HostName", "UserName")) {
     if ([string]::IsNullOrWhiteSpace((Get-Variable $required).Value)) {
         throw "$required is required. Pass it explicitly or use -DeployFile."
     }
 }
 
+$authArgs = Get-PuttyAuthArgs
+
 $masterScript = Join-Path $repoRoot "scripts\linux\lucid_blocks_master_server.py"
 $heartbeatScript = Join-Path $repoRoot "scripts\linux\lucid_blocks_server_heartbeat.py"
 
 Write-Host "Installing master registry scripts..."
-& $PlinkPath -batch -ssh -pw $Password "${UserName}@${HostName}" "mkdir -p '$RemoteRoot'" | Out-Host
+$remoteRootBashQ = ConvertTo-BashSingleQuoted $RemoteRoot
+& $PlinkPath @authArgs -ssh "${UserName}@${HostName}" "mkdir -p $remoteRootBashQ" | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "remote mkdir failed" }
-& $PscpPath -batch -pw $Password $masterScript "${UserName}@${HostName}:$RemoteRoot/lucid_blocks_master_server.py" | Out-Host
+& $PscpPath @authArgs $masterScript "${UserName}@${HostName}:$RemoteRoot/lucid_blocks_master_server.py" | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "master upload failed" }
-& $PscpPath -batch -pw $Password $heartbeatScript "${UserName}@${HostName}:$RemoteRoot/lucid_blocks_server_heartbeat.py" | Out-Host
+& $PscpPath @authArgs $heartbeatScript "${UserName}@${HostName}:$RemoteRoot/lucid_blocks_server_heartbeat.py" | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "heartbeat upload failed" }
+
+$remoteRootQ = ConvertTo-BashSingleQuoted $RemoteRoot
+$masterServiceQ = ConvertTo-BashSingleQuoted $MasterServiceName
+$heartbeatServiceQ = ConvertTo-BashSingleQuoted $HeartbeatServiceName
+$publicNameQ = ConvertTo-BashSingleQuoted $PublicName
+$publicRegionQ = ConvertTo-BashSingleQuoted $PublicRegion
+$publicAddressQ = ConvertTo-BashSingleQuoted $HostName
 
 $remoteScript = @"
 set -e
-remote_root='$RemoteRoot'
-master_service='$MasterServiceName'
-heartbeat_service='$HeartbeatServiceName'
+remote_root=$remoteRootQ
+master_service=$masterServiceQ
+heartbeat_service=$heartbeatServiceQ
 master_port='$MasterPort'
 status_port='$StatusPort'
-public_name='$PublicName'
-public_region='$PublicRegion'
-public_address='$HostName'
+public_name=$publicNameQ
+public_region=$publicRegionQ
+public_address=$publicAddressQ
 
 mkdir -p "`$remote_root"
 chmod 755 "`$remote_root/lucid_blocks_master_server.py" "`$remote_root/lucid_blocks_server_heartbeat.py"
@@ -127,7 +159,7 @@ EOF
 cat > "/etc/systemd/system/`$heartbeat_service" <<EOF
 [Unit]
 Description=Lucid Blocks dedicated server heartbeat
-After=network-online.target `$master_service lucid-blocks-linux-dedicated.service
+After=network-online.target `$master_service lucid-blocks-dedicated.service
 Wants=`$master_service
 
 [Service]
@@ -163,11 +195,12 @@ try {
     $remoteScriptLf = $remoteScript -replace "`r`n", "`n"
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($tempScript.FullName, $remoteScriptLf, $utf8NoBom)
-    & $PscpPath -batch -pw $Password $tempScript.FullName "${UserName}@${HostName}:$remoteScriptPath" | Out-Host
+    & $PscpPath @authArgs $tempScript.FullName "${UserName}@${HostName}:$remoteScriptPath" | Out-Host
     if ($LASTEXITCODE -ne 0) {
         throw "remote script upload failed"
     }
-    & $PlinkPath -batch -ssh -pw $Password "${UserName}@${HostName}" "bash '$remoteScriptPath'; rc=`$?; rm -f '$remoteScriptPath'; exit `$rc" | Out-Host
+    $remoteScriptPathQ = ConvertTo-BashSingleQuoted $remoteScriptPath
+    & $PlinkPath @authArgs -ssh "${UserName}@${HostName}" "bash $remoteScriptPathQ; rc=`$?; rm -f $remoteScriptPathQ; exit `$rc" | Out-Host
     if ($LASTEXITCODE -ne 0) {
         throw "remote master deploy failed"
     }
